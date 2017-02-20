@@ -91,7 +91,7 @@ def parseCLI():
     args = parser.parse_args()
     return args
 
-if __name__ == "__main__":
+if __name__ == "__main__":z
     args = parseCLI()
 
     # make the directory for the created files
