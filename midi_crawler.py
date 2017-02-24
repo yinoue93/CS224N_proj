@@ -11,7 +11,7 @@ from posixpath import basename
 
 import threading
 
-max_thread = 20
+max_thread = 10
 sema = threading.Semaphore(max_thread)
 
 def html_downloader(url, next_htmls, folderName):
@@ -74,6 +74,58 @@ def titleFinder(url, visited_urls, htmlStr, folderName, urlRegex=None, depth=1):
     for nextURL,nextResp in next_htmls:
         titleFinder(nextURL, visited_urls, nextResp, folderName, urlRegex, depth=depth-1)
 
+counter = 0
+def thesession_downloader(pageNum, folderName):
+    try:
+        base_url = 'https://thesession.org'
+        url = base_url+'/tunes/'+str(pageNum)
+
+        response = urllib2.urlopen(url)
+
+        soup = BeautifulSoup(response.read(), "html.parser")
+
+        songName = soup.find('h1').getText()
+        count = 0
+        for link in soup.findAll('a'):
+            if link.has_attr('href'):
+                if re.match('/tunes/%s/abc/[0-9]+' % pageNum, link['href']):
+                    if os.path.exists('%s\\%s_%d.abc' %(folderName,songName,count)):
+                        continue
+
+                    abcUrl = base_url+link['href']
+
+                    file = open('%s\\%s_%d.abc' %(folderName,songName,count), 'wb')
+                    abcResponse = urllib2.urlopen(abcUrl)
+                    file.write(abcResponse.read())
+                    file.close()
+                    sys.stdout.write('.')
+
+                    count += 1
+
+    except:
+        sys.stdout.write('X')
+        pass
+
+    global counter
+    counter += 1
+    print counter
+    sema.release()
+    exit()
+
+def scrapeTheSession(folderName):
+    thread_list = []
+    for i in xrange(16000,17000):
+        sema.acquire(True)
+        th = threading.Thread(target=thesession_downloader, args=(i, folderName))
+
+        thread_list.append(th)
+        th.start()
+
+    # wait for the threads to finish
+    for th in thread_list:
+        th.join()
+
+
 def parseCLI():
     desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)
 
@@ -91,7 +143,7 @@ def parseCLI():
     args = parser.parse_args()
     return args
 
-if __name__ == "__main__":z
+if __name__ == "__main__":
     args = parseCLI()
 
     # make the directory for the created files
@@ -104,9 +156,12 @@ if __name__ == "__main__":z
         args.urlRegex = args.urlRegex.split(',')
 
     # start crawling
-    visited_urls = []
-    response = urllib2.urlopen(args.url)
-    html = response.read()
-    titleFinder(args.url, visited_urls, html, args.folderName, args.urlRegex, depth=args.depth)
+    if 'thesession.org' in args.url:
+        scrapeTheSession(args.folderName)
+    else:
+        visited_urls = []
+        response = urllib2.urlopen(args.url)
+        html = response.read()
+        titleFinder(args.url, visited_urls, html, args.folderName, args.urlRegex, depth=args.depth)
     
     print "done"

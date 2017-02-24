@@ -224,8 +224,32 @@ def pianoroll2midi(pianoroll, outfilename, use_velocity=True, fs=100):
 
 	pm.instruments.append(instrument)
 	pm.write(outfilename)
+
+def convertMidiAbcWorker(mapList):
+	# abc2midi.exe taken from http://ifdo.ca/~seymour/runabc/top.html
+	filename,fromDir,toDir,abc2midi = mapList
+	fromStr,toStr,binName = ('.abc','.mid','abc2midi') \
+								if abc2midi else ('.mid','.abc','midi2abc')
+	if fromStr not in filename:
+		return
+
+	fromFile = os.path.join(fromDir,filename)
+	toFile = os.path.join(toDir,filename.replace(fromStr,'')+toStr)
+
+	os.system('abcmidi_win32\\%s.exe "%s" -o "%s" -silent' %(binName,fromFile,toFile))
+
+def convertMidiAbc(fileDir, abc2midi):
+	outputFolder = fileDir + ('_midi' if abc2midi else '_abc')
+	if not os.path.exists(outputFolder):
+		os.makedirs(outputFolder)
+
+	p = Pool(8)
+	mapList = [(fname,fileDir,outputFolder,abc2midi) for fname in os.listdir(fileDir)]
+
+	p.map(convertMidiAbcWorker, mapList)
 	
 if __name__ == "__main__":
+	convertMidiAbc('the_session', abc2midi=True)
 	#eraseUnreadable('video_games')
 	#plotMIDI('video_games/dw2.mid')
 
