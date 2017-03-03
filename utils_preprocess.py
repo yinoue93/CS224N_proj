@@ -1,8 +1,9 @@
 import pretty_midi
-
 import matplotlib.pyplot as plt
-
 import os
+import re
+
+from multiprocessing import Pool
 
 def drummer():
 	iterf = 0
@@ -48,7 +49,45 @@ def plotMIDI(file_name):
 	plt.matshow(roll[:,:2000], aspect='auto', origin='lower', cmap='magma')
 	plt.show()
 
+def extractABCtxtWorker(dataPack):
+	filename,outputname = dataPack
+	header = True
+	headerDict = {}
+	headerTup = ('T', 'R', 'M', 'L', 'K', 'Q')
+	with open(filename,'r') as infile:
+		with open(outputname,'w') as outfile:
+			for line in infile:
+				line = line.replace(' ','')
+				if line=='\n':
+					continue
+				if header:
+					headerStr = re.match('[a-zA-Z]:',line)
+					if headerStr is None:
+						header = False
+						for head in headerTup:
+							if head in headerDict:
+								outfile.write(headerDict[head])
+						outfile.write(line.replace('\n', ''))
+					elif headerStr.group()[0] in headerTup:
+						headerDict[headerStr.group()[0]] = line
+				else:
+					outfile.write(line.replace('\n', ''))
+
+			outfile.write('\n')
+
+
+def extractABCtxt(folderName):
+	outputFolder = folderName+'_txt_extracted'
+	if not os.path.exists(outputFolder):
+		os.makedirs(outputFolder)
+
+	p = Pool(8)
+	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname)) 
+										for fname in os.listdir(folderName)]
+
+	p.map(extractABCtxtWorker, mapList)
 
 if __name__ == "__main__":
-	eraseUnreadable('video_games')
+	extractABCtxt('/data/the_session')
+	# eraseUnreadable('video_games')
 	#plotMIDI('video_games/dw2.mid')
