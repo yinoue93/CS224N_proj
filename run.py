@@ -1,5 +1,18 @@
 import tensorflow as tf
 import numpy as np
+import os
+import sys
+
+
+
+
+
+
+
+
+
+
+
 
 
 def run_model(train, datapath, batch_size, max_steps):
@@ -12,4 +25,5 @@ def main(_):
 
 
 if __name__ == "__main__":
-    tf.app.run()
+    # tf.app.run()
+    main()

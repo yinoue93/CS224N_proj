@@ -22,6 +22,7 @@ import logging
 # 		# Only for Seq2Seq Attention Models
 # 		self.num_encode = 
 # 		self.num_decode = 
+# 		self.attention_option = 
 
 
 
@@ -75,8 +76,8 @@ class CharRNN(object):
 
 	def train(self, op='adam', max_norm):
 		loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(preds, self.label_placeholder))
-
 		tvars = tf.trainable_variables()
+		
 		# Gradient clipping
         grads, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tvars),max_norm)
         optimizer = tf.train.AdamOptimizer(self.config.lr)
@@ -141,11 +142,11 @@ class Seq2SeqRNN(object):
 
 	 	# Prepare Attention mechanism
 	 	attention_keys, attention_values, attention_score_fn, \
-	 					 attention_construct_fn = seq2seq.prepare_attention(
-               										attention_states, attention_option, decoder_hidden_size)
+	 					 attention_construct_fn = seq2seq.prepare_attention(encoder_outputs,
+	 					 				self.config.attention_option, self.config.num_decode)
 
 	 	# Training mechanism of decoder and attention mechanism
-	 	if train:
+	 	if is_train:
 		 	decoder_fn_train = seq2seq.attention_decoder_fn_train(encoder_state=encoder_state,
 	              					attention_keys=attention_keys,
 	              					attention_values=attention_values,
@@ -157,7 +158,18 @@ class Seq2SeqRNN(object):
 								            cell=, decoder_fn=decoder_fn_train,
 								            inputs=decoder_inputs, sequence_length=decoder_length,
 								            time_major=True)
-		 else
+		 else:
+		 	decoder_fn_inference = attention_decoder_fn.attention_decoder_fn_inference(
+                  		output_fn=output_fn, encoder_state=encoder_state, attention_keys=attention_keys,
+                  		attention_values=attention_values, attention_score_fn=attention_score_fn,
+                  		attention_construct_fn=attention_construct_fn, embeddings=decoder_embeddings,
+                  		start_of_sequence_id=start_of_sequence_id, end_of_sequence_id=end_of_sequence_id,
+                  		maximum_length=decoder_sequence_length - 1,
+                  		num_decoder_symbols=num_decoder_symbols, dtype=dtypes.int32)
+
+          	decoder_outputs_inference, decoder_state_inference, _ = seq2seq.dynamic_rnn_decoder(
+                  					cell=decoder_cell, decoder_fn=decoder_fn_inference,
+                  					time_major=True)
 
 
 
