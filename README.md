@@ -6,6 +6,9 @@
   * `utils_preprocess.py` - utility script for midi preprocessing.
 
 ## Example .abc format
+
+![exABC](images/example_abc.png?raw=true "Example .abc Music")
+
 ```
 X:1
 T:NeilyCleere's
@@ -16,8 +19,6 @@ K:Dmaj
 Q:100
 FG|A2A>B|=c/B/AFG|AB=c/B/A|G2FG|A>^GA>B|=c/B/Af2|edAF|G2:||:fg|a>gfa|gefg|a>gfa|g2fg|a>gfa|gef2|edAF|G2:|
 ```
-
-![exABC](images/example_abc.png?raw=true "Example .abc Music")
 
 ## Data Encoding Structure
 The numpy array representing each sample is composed of two parts: the metadata and the song.
