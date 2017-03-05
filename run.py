@@ -27,14 +27,14 @@ def main(args):
 	print("Reading in data from HDF5 File....")
 	data_dict = hdf52dict('encoded_data.h5')
 
-	output, state = curModel.build_model(args.train)
+	output, state = curModel.build_model(is_train = args.train)
 	input_placeholder, label_placeholder, initial_placeholder, train_op = curModel.train()
 
+	
 
 
 
-    
-
+   
 
 def parseCommandLine():
 	desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)

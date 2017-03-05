@@ -23,7 +23,8 @@ class Config(object):
 		self.max_length = 8
 
 		self.vocab_size = 124
-		self.hidden_size = self.songtype/2*5 + 2
+		self.meta_embed = self.songtype/2
+		self.hidden_size = self.meta_embed*5 + 2
 		self.num_layers = 2
 		self.num_epochs = 30
 		self.keep_prob = 0.6
@@ -59,23 +60,26 @@ class CharRNN(object):
 		print("Completed Initializing the Char RNN Model.....")
 
 
-	def create_model(self, is_train):
+	def create_model(self, is_train=True):
 		 # with tf.variable_scope(self.cell_type):
 	 	if is_train:
 	 		self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=1.0)
 	 	rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
 
 	 	# Embedding lookup for ABC format characters
-	 	num_dims = self.config.vocab_size/2
-	 	embeddings_var = tf.Variable(tf.random_uniform([self.config.batch_size,num_dims, self.config.vocab_size], 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
+	 	num_dims = self.config.vocab_size*3/4.0
+	 	embeddings_var = tf.Variable(tf.random_uniform([num_dims, self.config.vocab_size],
+	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
 	 	embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
 
 	 	# Embedding lookup for Metadata
-	 	num_dims_meta = self.config.meta_size/2
-	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.batch_size, num_dims_meta, self.config.meta_size],
+	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.meta_embed, self.config.songtype],
 	 								 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
-	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state)
+	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state[:, :5])
 
+	 	# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
+	 	embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size-2])  
+	 	embeddings_meta = tf.concat([embeddings_meta, tf.constant(self.initial_state[:, 5:])], axis=0)
 
 	 	output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=embeddings_meta)
 	 	self.pred = output
