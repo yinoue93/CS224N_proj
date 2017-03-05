@@ -9,6 +9,8 @@ import numpy as np
 from collections import Counter
 from multiprocessing import Pool
 
+from utils import *
+
 def eraseUnreadable(folderN):
 	iterf = 0
 	for fileN in os.listdir(folderN):
@@ -22,13 +24,6 @@ def eraseUnreadable(folderN):
 		except:
 			print 'failed: '+fileN
 			os.remove(fileAbsN)
-
-def plotMIDI(file_name):
-	midi_data = pretty_midi.PrettyMIDI(file_name)
-	roll = midi_data.get_piano_roll()
-
-	plt.matshow(roll[:,:2000], aspect='auto', origin='lower', cmap='magma')
-	plt.show()
 
 def extractABCtxtWorker(dataPack):
 	filename,outputname = dataPack
@@ -75,8 +70,7 @@ def extractABCtxtWorker(dataPack):
 
 def extractABCtxt(folderName):
 	outputFolder = folderName+'_cleaned'
-	if not os.path.exists(outputFolder):
-		os.makedirs(outputFolder)
+	makedir(outputFolder)
 
 	p = Pool(8)
 	filenames = [re.sub(r'[^\x00-\x7f]',r'',fname) for fname in os.listdir(folderName)]
@@ -95,6 +89,8 @@ def abcFileCheckerWorker(dataPack):
 		fileStr = infile.read()
 		fileList = fileStr.split('\n')
 
+		# checking stage
+		#-----------------------------
 		# each .abc file needs to be 8 lines long (6 metadata, 1 music, and 1 empty line)
 		if len(fileList)!=8:
 			print filename+': Does not have 8 lines'
@@ -110,98 +106,35 @@ def abcFileCheckerWorker(dataPack):
 		if fileList[6].replace('||','|').count('|')<MIN_MEASURES+1:
 			print filename+': Song too short'
 			return
+		#-----------------------------
 
+		# augmentation stage
+		#-----------------------------
+		fileStr = 'X:1\n' + fileStr
+
+		# save the non-augmented song
 		with open(outputname,'w') as outfile:
 			outfile.write(fileStr)
+
+		# check if the file just saved was correctly formed .abc file
+		if not passesABC2ABC(outputname):
+			print "Doesn't pass abc2abc: " + outputname
+			os.remove(outputname)
+			return
+
+		for shift in xrange(-5,6):
+			transposeABC(outputname, outputname.replace('.abc','_%s.abc'%shift), shift)
 
 
 def abcFileChecker(folderName):
 	outputFolder = folderName+'_checked'
-	if not os.path.exists(outputFolder):
-		os.makedirs(outputFolder)
+	makedir(outputFolder)
 
 	p = Pool(8)
 	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname)) 
 										for fname in os.listdir(folderName)]
 
 	p.map(abcFileCheckerWorker, mapList)
-
-
-MODE_MAJ = 0
-MODE_MIN = 1
-MODE_MIX = 2
-MODE_DOR = 3
-MODE_PHR = 4
-MODE_LYD = 5
-MODE_LOC = 6
-def keySigDecomposer(line):
-	"""
-	Decompose the key signature into two portions- key and mode
-
-	Returns:
-	key - number of flats, negative for sharps
-	mode - as defined by MODE_ constants
-	"""
-
-	# first determine the mode
-	mode = MODE_MAJ
-
-	searchList = [('mix',MODE_MIX),('dor',MODE_DOR),('phr',MODE_PHR),('lyd',MODE_LYD),
-				  ('loc',MODE_LOC),('maj',MODE_MAJ),('min',MODE_MIN),('m',MODE_MIN),
-				  ('p',MODE_PHR)]
-
-	lower = line.lower()
-	for searchTup in searchList:
-		if searchTup[0] in lower:
-			mode = searchTup[1]
-			line = line[:lower.rfind(searchTup[0])]
-			break
-
-	# then determine the key
-	keys = ['B#','E#','A#','D#','G#','C#','F#','B','E','A','D','G','C',
-			'F','Bb','Eb','Ab','Db','Gb','Cb','Fb']
-	mode_modifier = {MODE_MAJ:-12, MODE_MIN:-9, MODE_MIX:-11, MODE_DOR:-10, 
-					 MODE_PHR:-8, MODE_LYD:-13, MODE_LOC:-7}
-
-	key = keys.index(line) + mode_modifier[mode]
-
-	return str(key),str(mode)
-
-def loadCleanABC(abcname):
-	"""
-	Loads a file in .abc format (cleaned), and returns the meta data and music contained
-	in the file. 
-	
-	@meta - dictionary of metadata, key is the metadata type (ex. 'K')
-	@music - string of the music
-	"""
-	meta = {}
-	counter = 6
-	with open(abcname,'r') as abcfile:
-		for line in abcfile:
-			# break down the key signature into # of sharps and flats
-			# and mode
-			if counter==2:
-				try:
-					meta['K_key'],meta['K_mode'] = keySigDecomposer(line[2:-1])
-				except:
-					print 'Key signature decomposition failed for file: ' + abcname
-					exit(0)
-			if counter>0:
-				meta[line[0]] = line[2:-1]
-				counter -= 1
-			else:
-				music = line[:-1]
-
-	notes = [chr(i) for i in range(ord('a'),ord('g')+1)]
-	notes += [c.upper() for c in notes]
-	# add metadata that we manually create
-	meta['len'] = music.replace('||','|').replace('|||','|').count('|')
-	countList = Counter(music)
-	timeSigNumerator = int(meta['M'][:meta['M'].find('/')])
-	meta['complexity'] = (sum(countList[c] for c in notes)*100)/(meta['len']*timeSigNumerator)
-
-	return meta,music
 
 def generateVocab(foldername):
 	"""
@@ -216,8 +149,18 @@ def generateVocab(foldername):
 	musicDict = {}
 
 	filenames = [os.path.join(foldername,filename) for filename in os.listdir(foldername)]
-	for filename in filenames:
-		meta,music = loadCleanABC(filename)
+	for i,filename in enumerate(filenames):
+		if i%1000==0:
+			print i
+
+		try:
+			meta,music = loadCleanABC(filename)
+		except:
+			print filename
+
+		if '\xc5' in music:
+			print filename
+			exit(0)
 		
 		for header in headerTup:
 			newMeta = str(meta[header])
@@ -276,50 +219,88 @@ def encodeABC(folderName):
 	meta_map = pickle.load(open('vocab_map_meta.p','rb'))
 	music_map = pickle.load(open('vocab_map_music.p','rb'))
 
-	outputFolder = folderName+'_encoded'
-	if not os.path.exists(outputFolder):
-		os.makedirs(outputFolder)
+	outputFolder_test = folderName+'_test_encoded'
+	makedir(outputFolder_test)
+	outputFolder_train = folderName+'_train_encoded'
+	makedir(outputFolder_train)
 
 	p = Pool(8)
-	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname.replace('.abc','.npy')),
-				meta_map,music_map) for fname in os.listdir(folderName)]
+	testSongs = pickle.load(open('test_songs.p','rb'))
+	mapList = []
+
+	for filename in os.listdir(folderName):
+		fromName = os.path.join(folderName,filename)
+		outputFolder = outputFolder_test if (filename[:filename.find('_')] in testSongs) else outputFolder_train
+		toName = os.path.join(outputFolder,filename.replace('.abc','.npy'))
+
+		mapList.append((fromName,toName,meta_map,music_map))
 
 	p.map(encodeABCWorker, mapList)
 
-import h5py
-def write2hdf5(filename, dict2store, compression="lzf"):
-    """
-    Write items in a dictionary to an hdf5file
-    @type   filename    :   String
-    @param  filename    :   Filename of the hdf5 file to output to.
-    @type   dict2store  :   Dict
-    @param  dict2store  :   Dictionary of items to store. The value should be an array.
+def npy2nnInputWorker(dataPack):
+	stride_sz, window_sz, nnType, output_sz, outputFolder, meta, music = dataPack
 
-    Usage: write2hdf5('encoded_data.h5',{'data':os.listdir('the_session_cleaned_checked_encoded')})
-    """
-    with h5py.File(filename,'w') as hf:
-        for key,value in dict2store.iteritems():
-            hf.create_dataset(key, data=value,compression=compression)
+	count = 0
+	while True:
+		start_indx = count*stride_sz
+		input_window = music[start_indx:start_indx+window_sz]
 
+		if nnType=='char_rnn':
+			output_start = start_indx+1
+			output_end = start_indx+window_sz+1
+		elif nnType=='seq2seq':
+			output_start = start_indx+window_sz+1
+			output_end = output_start + output_sz
+		elif nnType=='BOW':
+			output_start = start_indx+window_sz+1
+			output_end = output_start+1 
+		else:
+			print 'specify the correct nnType...'
+			exit(0)
 
-def hdf52dict(hdf5Filename):
-    """
-    Loads an HDF5 file of a game and returns a dictionary of the contents
-    @type   hdf5Filename:   String
-    @param  hdf5Filename:   Filename of the hdf5 file.
-    """
-    retDict = {}
-    with h5py.File(hdf5Filename,'r') as hf:
-        for key in hf.keys():
-            retDict[key] = np.array(hf.get(key))
+		if output_end>len(music):
+			break
+		output_window = music[output_start:output_end]
 
-    return retDict
+		tup = (meta, input_window, output_window)
+		filename = os.path.join(outputFolder, key.replace('.npy','')+'_'+str(count))
+		pickle.dump(tup, open(filename+'.p','wb'))
 
+		count += 1
+
+def npy2nnInput(h5file, stride_sz, window_sz, nnType, output_sz=0, outputFolder=''):
+	"""
+	Converts encoded npy to an array of tuples for NN input
+
+	@h5file 	- string / filename of h5 file to read from
+	@stride_sz 	- int / stride size
+	@window_sz 	- int / window size of the input
+	@output_sz 	- int / window size of the output (only used for nnType='seq2seq')
+	@nnType 	- string / nn to feed the generated data to.
+			  	  'BOW' 'seq2seq' 'char_rnn'
+	@outputFolder - string / filename of the output
+	"""
+
+	makedir(outputFolder)
+
+	mapList = []
+	with h5py.File(h5file,'r') as hf_in:
+		for key in hf_in.keys():
+			data = np.array(hf_in.get(key))
+			meta,music = data[:7],data[7:]
+
+			mapList.append((stride_sz, window_sz, nnType, output_sz, outputFolder, meta, music))
+
+	p = Pool(8)
+	p.map(npy2nnInputWorker, mapList)
+			
 if __name__ == "__main__":
+	# preprocessing pipeline
+	#-----------------------------------
+	# extractABCtxt('the_session')
+	# abcFileChecker('the_session_cleaned')
+	# generateVocab('the_session_cleaned_checked')
 	# encodeABC('the_session_cleaned_checked')
-	#generateVocab('the_session_cleaned_checked')
-	#abcFileChecker('the_session_cleaned')
-	#extractABCtxtWorker(("the_session/The Bugle Horn polka_3.abc",'tmp.abc'))
-	# eraseUnreadable('video_games')
-	#plotMIDI('video_games/dw2.mid')
+	# npy2nnInput('tmp.h5', 5, 50, 'char_rnn', outputFolder='the_session_nn_input')
+	#-----------------------------------
 	pass
