@@ -5,6 +5,10 @@
     * Flags: **-u**: url, **-f**: output folder name, **-d**: crawl depth, **-r**: crawl regEx rules
   * `utils_preprocess.py` - utility script for midi preprocessing.
 
+## Useful Websites
+<http://www.mandolintab.net/abcconverter.php>
+<http://abcnotation.com/wiki/abc:standard:v2.1>
+
 ## Example .abc format
 
 ![exABC](images/example_abc.png?raw=true "Example .abc Music")
