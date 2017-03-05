@@ -1,4 +1,3 @@
-import pretty_midi
 import matplotlib.pyplot as plt
 import os
 import re
@@ -238,7 +237,7 @@ def encodeABC(folderName):
 	p.map(encodeABCWorker, mapList)
 
 def npy2nnInputWorker(dataPack):
-	stride_sz, window_sz, nnType, output_sz, outputFolder, meta, music = dataPack
+	stride_sz, window_sz, nnType, output_sz, outputFolder, meta, music, basename = dataPack
 
 	count = 0
 	while True:
@@ -263,7 +262,7 @@ def npy2nnInputWorker(dataPack):
 		output_window = music[output_start:output_end]
 
 		tup = (meta, input_window, output_window)
-		filename = os.path.join(outputFolder, key.replace('.npy','')+'_'+str(count))
+		filename = os.path.join(outputFolder, basename.replace('.npy','')+'_'+str(count))
 		pickle.dump(tup, open(filename+'.p','wb'))
 
 		count += 1
@@ -289,18 +288,40 @@ def npy2nnInput(h5file, stride_sz, window_sz, nnType, output_sz=0, outputFolder=
 			data = np.array(hf_in.get(key))
 			meta,music = data[:7],data[7:]
 
-			mapList.append((stride_sz, window_sz, nnType, output_sz, outputFolder, meta, music))
+			mapList.append((stride_sz, window_sz, nnType, output_sz, outputFolder, meta, music, key))
 
 	p = Pool(8)
 	p.map(npy2nnInputWorker, mapList)
-			
+
+def loadNNInput(foldername):
+	input_list = []
+	filenames = os.listdir(foldername)
+	ten_percent = int(len(filenames)*0.1)
+	run_sum = 0
+	for i,filename in enumerate(filenames):
+		# print a dot for every 10 percent of data read
+		if i==run_sum:
+			run_sum += ten_percent 
+			print '.'
+		with open(os.path.join(foldername,filename)) as f:
+			input_list.append(pickle.load(f))
+
+	pickle.dump(input_list, open(foldername+'.p','wb'))
+	return input_list
+
 if __name__ == "__main__":
+	print len(loadNNInput('/data/the_session_nn_input_train_window_50_stride_25'))
+	print len(loadNNInput('/data/the_session_nn_input_test_window_50_stride_25'))
+	print len(loadNNInput('/data/the_session_nn_input_test_window_100_stride_50'))
+
 	# preprocessing pipeline
 	#-----------------------------------
 	# extractABCtxt('the_session')
 	# abcFileChecker('the_session_cleaned')
 	# generateVocab('the_session_cleaned_checked')
 	# encodeABC('the_session_cleaned_checked')
-	# npy2nnInput('tmp.h5', 5, 50, 'char_rnn', outputFolder='the_session_nn_input')
+	# abc2h5('/data/the_session_cleaned_checked_test_encoded','/data/encoded_data_test.h5')
+	# abc2h5('/data/the_session_cleaned_checked_train_encoded','/data/encoded_data_train.h5')
+	# npy2nnInput('/data/encoded_data_train.h5', 50, 100, 'char_rnn', outputFolder='/data/the_session_nn_input_train_window_100_stride_50')
 	#-----------------------------------
 	pass
