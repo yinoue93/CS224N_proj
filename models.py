@@ -29,10 +29,30 @@ class Config(object):
 		self.num_epochs = 30
 		self.keep_prob = 0.6
 
+		# Only for Skip-Gram model
+		self.skip_window = 2
+		self.embed_size = 32
+
 		# Only for Seq2Seq Attention Models
 		self.num_encode = 8
 		self.num_decode = 4
 		self.attention_option = 'luong'
+
+
+class SkipGram(object):
+
+	def __init__(self, input_size, label_size):
+		self.config = Config()
+		self.input_placeholder = tf.placeholder(tf.int32, shape=[None])
+		self.label_placeholder = tf.placeholder(tf.int32, shape=[None, 1])
+		self.embeddings = tf.Variable(tf.random_uniform([self.config.vocab_size, 
+								self.config.embed_size], -1.0, 1.0))
+
+
+	def build_model(self):
+		softmax_weights = tf.Variable(tf.truncated_normal([self.config.vocab_size, self.embed_size],
+                         stddev=1.0 / math.sqrt(self.config.embed_size)))
+        softmax_biases = tf.Variable(tf.zeros([self.config.embed_size]))
 
 
 
@@ -68,12 +88,12 @@ class CharRNN(object):
 
 	 	# Embedding lookup for ABC format characters
 	 	num_dims = self.config.vocab_size*3/4.0
-	 	embeddings_var = tf.Variable(tf.random_uniform([num_dims, self.config.vocab_size],
+	 	embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, num_dims],
 	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
 	 	embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
 
 	 	# Embedding lookup for Metadata
-	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.meta_embed, self.config.songtype],
+	 	embeddings_var_meta = tf.Variable(tf.random_uniform([, self.config.songtype, self.config.meta_embed],
 	 								 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
 	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state[:, :5])
 
