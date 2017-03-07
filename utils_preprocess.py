@@ -14,8 +14,10 @@ FORMAT_DIR = 'formatted'
 CHECK_DIR = 'checked'
 ENCODE_TEST_DIR = 'test_encoded'
 ENCODE_TRAIN_DIR = 'train_encoded'
+ENCODE_DEV_DIR = 'dev_encoded'
 NN_INPUT_TEST_DIR = 'nn_input_test'
 NN_INPUT_TRAIN_DIR = 'nn_input_train'
+NN_INPUT_DEV_DIR = 'nn_input_dev'
 
 def eraseUnreadable(folderN):
 	iterf = 0
@@ -260,23 +262,34 @@ def encodeABC(outputFolder):
 	makedir(outputFolder_test)
 	outputFolder_train = os.path.join(outputFolder, ENCODE_TRAIN_DIR)
 	makedir(outputFolder_train)
+	outputFolder_dev = os.path.join(outputFolder, ENCODE_DEV_DIR)
+	makedir(outputFolder_dev)
 
 	p = Pool(8)
 	testSongs = pickle.load(open(os.path.join(outputFolder, 'test_songs.p'),'rb'))
+	trainSongs = pickle.load(open(os.path.join(outputFolder, 'train_songs.p'),'rb'))
+	devSongs = pickle.load(open(os.path.join(outputFolder, 'dev_songs.p'),'rb'))
 	mapList = []
 
 	for filename in os.listdir(folderName):
 		fromName = os.path.join(folderName,filename)
-		outFolder = outputFolder_test if (filename[:filename.find('_')] in testSongs) else outputFolder_train
+		song_basename = filename[:filename.find('_')]
+		if song_basename in testSongs:
+			outFolder = outputFolder_test
+		elif song_basename in trainSongs:
+			outFolder = outputFolder_train
+		elif song_basename in devSongs:
+			outFolder = outputFolder_dev
 		toName = os.path.join(outFolder,filename.replace('.abc','.npy'))
 
 		mapList.append((fromName,toName,meta_map,music_map))
 
 	p.map(encodeABCWorker, mapList)
 
-def npy2nnInputWorker(dataPack):
-	stride_sz, window_sz, nnType, output_sz, outputFolder, fname = dataPack
-	basename = os.path.basename(fname)
+def npy2nnInputWorkerWorker(dataPack):
+	stride_sz, window_sz, nnType, output_sz, fname = dataPack
+
+	tupList = []
 
 	# open the song (in numpy form)
 	data = np.load(fname)
@@ -305,14 +318,33 @@ def npy2nnInputWorker(dataPack):
 		output_window = music[output_start:output_end]
 
 		tup = (meta, input_window, output_window)
-		filename = os.path.join(outputFolder, basename.replace('.npy','')+'_'+str(count))
-		pickle.dump(tup, open(filename+'.p','wb'))
+		tupList.append(tup)
 
 		count += 1
 
 	# add another window which includes the last element
+	if nnType=='char_rnn' or nnType=='BOW':
+		start_indx = len(music)-window_sz-1
+		output_start = start_indx+1
+		output_end = start_indx+window_sz+1 if nnType=='char_rnn' else output_start+1 
+	elif nnType=='seq2seq':
+		start_indx = len(music)-window_sz-output_sz-1
+		output_start = start_indx+window_sz+1
+		output_end = output_start+output_sz
 
-def npy2nnInput(outputFolder, stride_sz, window_sz, nnType, output_sz=0):
+	tupList.append((meta, music[start_indx:start_indx+window_sz], music[output_start:output_end]))
+
+	return tupList
+
+def npy2nnInputWorker(dataPack):
+	outfname,tupList = dataPack
+	windowList = []
+	for tup in tupList:
+		windowList += npy2nnInputWorkerWorker(tup)
+
+	pickle.dump(windowList, open(outfname,'wb'))
+
+def npy2nnInput(outputFolder, stride_sz, window_sz, nnType, output_sz=0, num_buckets=8):
 	"""
 	Converts encoded npy to an array of tuples for NN input
 
@@ -322,52 +354,73 @@ def npy2nnInput(outputFolder, stride_sz, window_sz, nnType, output_sz=0):
 	@output_sz 		- int / window size of the output (only used for nnType='seq2seq')
 	@nnType 		- string / nn to feed the generated data to.
 			 		  'BOW' 'seq2seq' 'char_rnn'
+	@num_buckets	- int / number of files to generate
 	"""
 
-	dir_list = [(NN_INPUT_TEST_DIR,ENCODE_TEST_DIR), (NN_INPUT_TRAIN_DIR,ENCODE_TRAIN_DIR)]
+	dir_list = [(NN_INPUT_TEST_DIR, ENCODE_TEST_DIR), 
+				(NN_INPUT_TRAIN_DIR, ENCODE_TRAIN_DIR), 
+				(NN_INPUT_DEV_DIR, ENCODE_DEV_DIR)]
 
-	mapList = []
 	for outDir,inDir in dir_list:
+		inputList = []
 		nnFolder = os.path.join(outputFolder, outDir)
 		makedir(nnFolder)
 
 		encodedDir = os.path.join(outputFolder, inDir)
 		for fname in os.listdir(encodedDir):
-			mapList.append((stride_sz, window_sz, nnType, output_sz, nnFolder, os.path.join(encodedDir, fname)))
+			inputList.append((stride_sz, window_sz, nnType, output_sz, os.path.join(encodedDir, fname)))
 
-	p = Pool(8)
-	p.map(npy2nnInputWorker, mapList)
+		random.shuffle(inputList)
+		mapList = []
+		for i in range(num_buckets):
+			mapList.append((os.path.join(nnFolder,'stride_%d_window_%d_nnType_%s_%d.p'%(stride_sz,window_sz,nnType,i)), 
+							inputList[int(i*len(inputList)/num_buckets)
+										:int((i+1)*len(inputList)/num_buckets)]))
 
-def loadNNInput(foldername):
-	input_list = []
-	filenames = os.listdir(foldername)
-	ten_percent = int(len(filenames)*0.1)
-	run_sum = 0
-	for i,filename in enumerate(filenames):
-		# print a dot for every 10 percent of data read
-		if i==run_sum:
-			run_sum += ten_percent 
-			print '.'
-		with open(os.path.join(foldername,filename)) as f:
-			input_list.append(pickle.load(f))
+		p = Pool(8)
+		p.map(npy2nnInputWorker, mapList)
 
-	pickle.dump(input_list, open(foldername+'.p','wb'))
-	return input_list
+def shuffleDataset(foldername):
+	dir_list = (NN_INPUT_TEST_DIR, NN_INPUT_TRAIN_DIR, NN_INPUT_DEV_DIR)
+
+	for outdir in dir_list:
+		originalDir = os.path.join(foldername,outdir)
+		outFolder = originalDir+'_shuffled'
+		makedir(outFolder)
+
+		input_list = []
+		filenames = os.listdir(originalDir)
+		num_buckets = len(filenames)
+		print 'Loading data'
+		for filename in filenames:
+			print filename
+			with open(os.path.join(originalDir,filename),'r') as f:
+				input_list += pickle.load(f)
+
+		random.shuffle(input_list)
+
+		print 'Done shuffling, saving the shuffled data...'
+		for i,filename in enumerate(filenames):
+			print filename
+			with open(os.path.join(outFolder,filename),'w') as f:
+				input_frac = input_list[int(i*len(input_list)/len(filenames))
+										:int((i+1)*len(input_list)/len(filenames))]
+				pickle.dump(input_frac, f)
 
 if __name__ == "__main__":
-	# npy2nnInputWorker((25,50,'char_rnn',0,'','the_session_processed/the_session_cleaned_checked_test_encoded/The Blacksmithfs reel_3_-4.npy'))
-	
 	# formatABCtxtWorker(('tmp.abc','tmp2.abc'))
 	# print passesABC2ABC('tmp2.abc')
+
 	# preprocessing pipeline
 	#-----------------------------------
-	originalDataDir = 'tiny'
-	processedDir = 'tiny_processed'
+	originalDataDir = 'small'
+	processedDir = originalDataDir+'_processed'
 	formatABCtxt(originalDataDir, processedDir)
 	checkABCtxt(processedDir)
-	testTrainSplit(processedDir, 0.2)
+	datasetSplit(processedDir, (0.8,0.1,0.1))
 	generateVocab(processedDir)
 	encodeABC(processedDir)
 	npy2nnInput(processedDir, 50, 100, 'char_rnn')
+	shuffleDataset(processedDir)
 	#-----------------------------------
 	pass
