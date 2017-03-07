@@ -39,20 +39,40 @@ class Config(object):
 		self.attention_option = 'luong'
 
 
-class SkipGram(object):
+class CBOW(object):
 
 	def __init__(self, input_size, label_size):
 		self.config = Config()
-		self.input_placeholder = tf.placeholder(tf.int32, shape=[None])
-		self.label_placeholder = tf.placeholder(tf.int32, shape=[None, 1])
+		self.input_size = input_size
+		self.label_size = label_size
+		self.input_placeholder = tf.placeholder(tf.int32, shape=[None, self.input_size])
+		self.label_placeholder = tf.placeholder(tf.int32, shape=[None, self.label_size])
 		self.embeddings = tf.Variable(tf.random_uniform([self.config.vocab_size,
 								self.config.embed_size], -1.0, 1.0))
 
+		print("Completed Initializing the CBOW Model.....")
+
 
 	def build_model(self):
-		softmax_weights = tf.Variable(tf.truncated_normal([self.config.vocab_size, self.embed_size],
-                         stddev=1.0 / math.sqrt(self.config.embed_size)))
-        softmax_biases = tf.Variable(tf.zeros([self.config.embed_size]))
+		weight = tf.get_variable("Wout", shape=[self.config.embed_size, self.config.vocab_size],
+           			initializer=tf.contrib.layers.xavier_initializer())
+        bias = tf.Variable(tf.zeros([self.config.vocab_size]))
+
+        word_vec =  tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
+        average_embedding = tf.reduce_sum(word_vec, reduction_indices=1)
+        model_output = tf.add(tf.matmul(average_embedding, weight), bias)
+        self.pred = model_output
+        print("Built the CBOW Model.....")
+
+        return model_output
+
+    def train(self):
+		self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
+		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(loss)
+
+		print("Setup the training mechanism for the CBOW model.....")
+
+		return self.input_placeholder, self.label_placeholder, self.train_op, self.loss
 
 
 
@@ -111,7 +131,7 @@ class CharRNN(object):
 
 
 	def train(self, max_norm=5, op='adam'):
-		loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(preds, self.label_placeholder))
+		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(preds, self.label_placeholder))
 		tvars = tf.trainable_variables()
 
 		# Gradient clipping
@@ -121,7 +141,7 @@ class CharRNN(object):
 
 		print("Setup the training mechanism for the Char RNN Model...")
 
-		return self.input_placeholder, self.label_placeholder, self.initial_state, self.train_op
+		return self.input_placeholder, self.label_placeholder, self.initial_state, self.train_op, self.loss
 
 
 
