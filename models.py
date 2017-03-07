@@ -24,7 +24,7 @@ class Config(object):
 
 		self.vocab_size = 124
 		self.meta_embed = self.songtype/2
-		self.hidden_size = self.meta_embed*5 + 2
+		self.hidden_size = self.meta_embed*5 #+ 2
 		self.num_layers = 2
 		self.num_epochs = 30
 		self.keep_prob = 0.6
@@ -55,18 +55,18 @@ class CBOW(object):
 
 	def build_model(self):
 		weight = tf.get_variable("Wout", shape=[self.config.embed_size, self.config.vocab_size],
-           			initializer=tf.contrib.layers.xavier_initializer())
-        bias = tf.Variable(tf.zeros([self.config.vocab_size]))
+		   			initializer=tf.contrib.layers.xavier_initializer())
+		bias = tf.Variable(tf.zeros([self.config.vocab_size]))
 
-        word_vec =  tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
-        average_embedding = tf.reduce_sum(word_vec, reduction_indices=1)
-        model_output = tf.add(tf.matmul(average_embedding, weight), bias)
-        self.pred = model_output
-        print("Built the CBOW Model.....")
+		word_vec =  tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
+		average_embedding = tf.reduce_sum(word_vec, reduction_indices=1)
+		model_output = tf.add(tf.matmul(average_embedding, weight), bias)
+		self.pred = model_output
+		print("Built the CBOW Model.....")
 
-        return model_output
+		return model_output
 
-    def train(self):
+	def train(self):
 		self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
 		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(loss)
 
@@ -78,22 +78,22 @@ class CBOW(object):
 
 class CharRNN(object):
 
-	def __init__(self,input_size, label_size, cell_type):
+	def __init__(self, input_size, label_size, cell_type):
 		self.cell_type = cell_type
 		self.config = Config()
 
 		if cell_type == 'rnn':
 			self.cell = rnn.BasicRNNCell(self.config.hidden_size)
-			self.initial_state = self.cell.zero_state(self.config.batch_size, dtype=tf.float32)
 		elif cell_type == 'gru':
 			self.cell = rnn.GRUCell(self.config.hidden_size)
-			self.initial_state = self.cell.zero_state(self.config.batch_size, dtype=tf.float32)
 		elif cell_type == 'lstm':
 			self.cell = rnn.BasicLSTMCell(self.config.hidden_size)
-			self.initial_state = self.cell.zero_state(self.config.batch_size, dtype=tf.float32)
 
-		input_shape = (None,) + tuple([self.config.max_length,input_size])
-		output_shape = (None,) + tuple([self.config.max_length,label_size])
+		self.initial_state = self.cell.zero_state(self.config.batch_size, dtype=tf.int32)
+		# input_shape = (None,) + tuple([self.config.max_length,input_size])
+		input_shape = (None,) + tuple([input_size])
+		# output_shape = (None,) + tuple([self.config.max_length,label_size])
+		output_shape = (None,) + tuple([label_size])
 		self.input_placeholder = tf.placeholder(tf.int32, shape=input_shape, name='Input')
 		self.label_placeholder = tf.placeholder(tf.int32, shape=output_shape, name='Output')
 
@@ -107,21 +107,25 @@ class CharRNN(object):
 	 	rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
 
 	 	# Embedding lookup for ABC format characters
-	 	num_dims = self.config.vocab_size*3/4.0
+	 	num_dims = self.config.vocab_size*3/4
 	 	embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, num_dims],
 	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
 	 	embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
 
 	 	# Embedding lookup for Metadata
-	 	embeddings_var_meta = tf.Variable(tf.random_uniform([, self.config.songtype, self.config.meta_embed],
+	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.songtype, self.config.meta_embed],
 	 								 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
 	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state[:, :5])
 
 	 	# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
-	 	embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size-2])
-	 	embeddings_meta = tf.concat([embeddings_meta, tf.constant(self.initial_state[:, 5:])], axis=0)
+	 	embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
+		# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.initial_state[:, 5:])], axis=0)
+		# print embeddings_meta.get_shape().as_list()
+		# print embeddings.get_shape().as_list()
+		# print self.input_placeholder.get_shape().as_list()
 
-	 	output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=embeddings_meta)
+		initial_tuple = (embeddings_meta, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
+	 	output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
 	 	self.pred = output
 
 	 	print("Built the Char RNN Model...")
@@ -131,11 +135,11 @@ class CharRNN(object):
 
 
 	def train(self, max_norm=5, op='adam'):
-		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(preds, self.label_placeholder))
+		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
 		tvars = tf.trainable_variables()
 
 		# Gradient clipping
-		grads, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tvars),max_norm)
+		grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars),max_norm)
 		optimizer = tf.train.AdamOptimizer(self.config.lr)
 		self.train_op = optimizer.apply_gradients(zip(grads, tvars))
 

@@ -3,7 +3,7 @@ import numpy as np
 import os
 import sys
 from argparse import ArgumentParser
-from models import CharRNN
+from models import CharRNN, Config
 # from utils_preprocess import hdf52dict
 import pickle
 import reader
@@ -11,9 +11,9 @@ import random
 
 
 MAX_STEPS = 10000
-TRAIN_DATA = '/afs/ir/users/a/x/axelsly/cs224n/project/small_processed/small_processed/nn_input_train'
-TEST_DATA = '/afs/ir/users/a/x/axelsly/cs224n/project/small_processed/small_processed/nn_input_test'
-BATCH_SIZE = 32 # should be dynamically passed in to Config
+TRAIN_DATA = '/data/the_session_nn_input_train_window_50_stride_25'
+TEST_DATA = '/data/the_session_nn_input_test_window_50_stride_25'
+BATCH_SIZE = 32 # should be dynamically passed into Config
 NUM_EPOCHS = 5
 GPU_OPTIONS = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
 
@@ -29,8 +29,8 @@ def main(args):
         curModel = CharRNN(input_size, label_size, 'rnn')
 
 
-    output, state = curModel.build_model(is_train = args.train)
-    input_placeholder, label_placeholder, initial_placeholder, train_op = curModel.train()
+    output, state = curModel.create_model(is_train = args.train)
+    input_placeholder, label_placeholder, initial_placeholder, train_op, loss = curModel.train()
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
     if args.train:
@@ -44,11 +44,9 @@ def main(args):
         print "Creating testing batches."
         test_batches = abc_batch(test_filenames)
 
-
-
     with tf.Session(gpu_options=GPU_OPTIONS) as session:
         print "Inititialized TF Session!"
-        
+
         if args.train:
             init_op = tf.initialize_all_variables() #tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
             init_op.run()
@@ -67,9 +65,9 @@ def main(args):
                         label_placeholder: output_window_batch
                     }
 
-                    _, output_pred, output_state = sess.run([train_op, output, state], feed_dict=feed_dict)
-                    # _, batch_loss = sess.run([train_op, loss], feed_dict=feed_dict)
+                    _, batch_loss, output_pred, output_state = sess.run([train_op, loss, output, state], feed_dict=feed_dict)
 
+                    print "Batch Loss: " + str(batch_loss)
                     print "Output Predicion: " + str(output_pred)
                     print "Output State: " + str(output_state)
 
