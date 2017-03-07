@@ -39,20 +39,30 @@ class Config(object):
 		self.attention_option = 'luong'
 
 
-class SkipGram(object):
+class CBOW(object):
 
 	def __init__(self, input_size, label_size):
 		self.config = Config()
-		self.input_placeholder = tf.placeholder(tf.int32, shape=[None])
-		self.label_placeholder = tf.placeholder(tf.int32, shape=[None, 1])
+		self.input_size = input_size
+		self.label_size = label_size
+		self.input_placeholder = tf.placeholder(tf.int32, shape=[None, self.input_size])
+		self.label_placeholder = tf.placeholder(tf.int32, shape=[None, self.label_size])
 		self.embeddings = tf.Variable(tf.random_uniform([self.config.vocab_size, 
 								self.config.embed_size], -1.0, 1.0))
 
 
 	def build_model(self):
-		softmax_weights = tf.Variable(tf.truncated_normal([self.config.vocab_size, self.embed_size],
+		weight = tf.Variable(tf.truncated_normal([self.config.vocab_size, self.embed_size],
                          stddev=1.0 / math.sqrt(self.config.embed_size)))
-        softmax_biases = tf.Variable(tf.zeros([self.config.embed_size]))
+        bias = tf.Variable(tf.zeros([self.config.embed_size]))
+        word_vec =  tf.nn.embedding_lookup(self.embeddings_var, self.input_placeholder)
+        model_output = tf.add(tf.matmul(word_vec, weight), bias)
+        self.pred = model_output
+
+    def train(self):
+		loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
+		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(loss)
+		return self.input_placeholder, self.label_placeholder, self.train_op, self.pred
 
 
 
@@ -121,7 +131,7 @@ class CharRNN(object):
 
 		print("Setup the training mechanism for the Char RNN Model...")
 
-		return self.input_placeholder, self.label_placeholder, self.initial_state, self.train_op
+		return self.input_placeholder, self.label_placeholder, self.initial_state, self.train_op, self.pred
 
 
 
