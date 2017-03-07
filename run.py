@@ -10,18 +10,18 @@ import reader
 import random
 
 
-MAX_STEPS = 10000
-TRAIN_DATA = '/data/the_session_nn_input_train_window_50_stride_25'
-TEST_DATA = '/data/the_session_nn_input_test_window_50_stride_25'
-BATCH_SIZE = 32 # should be dynamically passed into Config
+TRAIN_DATA = '/data/small_processed/nn_input_train'
+TEST_DATA = '/data/small_processed/nn_input_test'
+BATCH_SIZE = 32 # should be dynamically passe into Config
 NUM_EPOCHS = 5
-GPU_OPTIONS = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
+GPU_CONFIG = tf.ConfigProto()
+GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
 
 
 def main(args):
-    input_size = 8
+    input_size = 100
     initial_size = 7
-    label_size = 1
+    label_size = 100
 
     if args.model == 'seq2seq':
         curModel = Seq2SeqRNN(input_size, label_size, 'rnn')
@@ -37,18 +37,18 @@ def main(args):
         print "Reading in training filenames."
         train_filenames = reader.abc_filenames(TRAIN_DATA)
         print "Creating training batches"
-        train_batches = abc_batch(train_filenames)
+        train_batches = reader.abc_batch(train_filenames, n=BATCH_SIZE)
     else:
         print "Reading in testing filenames."
         test_filenames = reader.abc_filenames(TEST_DATA)
         print "Creating testing batches."
-        test_batches = abc_batch(test_filenames)
+        test_batches = reader.abc_batch(test_filenames, n=BATCH_SIZE)
 
-    with tf.Session(gpu_options=GPU_OPTIONS) as session:
+    with tf.Session(config=GPU_CONFIG) as session:
         print "Inititialized TF Session!"
 
         if args.train:
-            init_op = tf.initialize_all_variables() #tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
+            init_op = tf.global_variables_initializer() # tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
             init_op.run()
 
             for i in xrange(NUM_EPOCHS):
@@ -65,11 +65,20 @@ def main(args):
                         label_placeholder: output_window_batch
                     }
 
-                    _, batch_loss, output_pred, output_state = sess.run([train_op, loss, output, state], feed_dict=feed_dict)
+                    _, batch_loss, output_pred, output_state = session.run([train_op, loss, output, state], feed_dict=feed_dict)
+                    prediction = np.argmax(output_pred, axis=2)
+                    difference = output_window_batch - prediction
 
-                    print "Batch Loss: " + str(batch_loss)
-                    print "Output Predicion: " + str(output_pred)
-                    print "Output State: " + str(output_state)
+                    correct_per_batch = np.sum(difference == 0, axis=1)
+                    accuracy_per_batch = correct_per_batch / float(difference.shape[1])
+                    accuaracy = np.mean(accuracy_per_batch)
+                    print "Average accuracy per batch {0}".format(accuaracy)
+
+                    # print "Batch Loss: {0}".format(batch_loss)
+                    # print "Output Predictions: {0}".format(prediction)
+                    # print "Input Labels: {0}".format(output_window_batch)
+                    # print "Output Prediction Probabilities: {0}".format(output_pred)
+                    # print "Output State: {0}".format(output_state)
 
         else: # Testing
             for test_batch in test_batches:
