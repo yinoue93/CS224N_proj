@@ -94,7 +94,7 @@ def formatABCtxt(folderName, outputFolder):
 
 	p = Pool(8)
 	filenames = [re.sub(r'[^\x00-\x7f]',r'',fname) for fname in os.listdir(folderName)]
-	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname2)) 
+	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname2))
 										for fname,fname2 in zip(os.listdir(folderName),filenames)]
 
 	p.map(formatABCtxtWorker, mapList)
@@ -159,7 +159,7 @@ def checkABCtxt(outputFolder):
 	makedir(outputFolder)
 
 	p = Pool(8)
-	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname)) 
+	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname))
 										for fname in os.listdir(folderName)]
 
 	p.map(checkABCtxtWorker, mapList)
@@ -191,7 +191,7 @@ def generateVocab(foldername):
 		if '\xc5' in music:
 			print filename
 			exit(0)
-		
+
 		for header in headerTup:
 			newMeta = str(meta[header])
 			if newMeta not in metaCount[header]:
@@ -202,7 +202,7 @@ def generateVocab(foldername):
 				if c not in musicDict:
 					musicDict[c] = 0
 				musicDict[c] += musicChars[c]
-			
+
 			metaCount[header][newMeta] += 1
 
 	meta2Store = {'R':{}, 'M':{}, 'L':{}, 'K_key':{}, 'K_mode':{}}
@@ -308,7 +308,7 @@ def npy2nnInputWorkerWorker(dataPack):
 			output_end = output_start + output_sz
 		elif nnType=='BOW':
 			output_start = start_indx+window_sz+1
-			output_end = output_start+1 
+			output_end = output_start+1
 		else:
 			print 'specify the correct nnType...'
 			exit(0)
