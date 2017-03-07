@@ -10,6 +10,13 @@ from multiprocessing import Pool
 
 from utils import *
 
+FORMAT_DIR = 'formatted'
+CHECK_DIR = 'checked'
+ENCODE_TEST_DIR = 'test_encoded'
+ENCODE_TRAIN_DIR = 'train_encoded'
+NN_INPUT_TEST_DIR = 'nn_input_test'
+NN_INPUT_TRAIN_DIR = 'nn_input_train'
+
 def eraseUnreadable(folderN):
 	iterf = 0
 	for fileN in os.listdir(folderN):
@@ -24,7 +31,7 @@ def eraseUnreadable(folderN):
 			print 'failed: '+fileN
 			os.remove(fileAbsN)
 
-def extractABCtxtWorker(dataPack):
+def formatABCtxtWorker(dataPack):
 	filename,outputname = dataPack
 	header = True
 	headerDict = {}
@@ -35,13 +42,12 @@ def extractABCtxtWorker(dataPack):
 		fileStr = infile.read().replace(' ','').replace('\r','\n')
 		if 'X:' not in fileStr:
 			return
-		print repr(fileStr)
 
 		with open(outputname,'w') as outfile:
 			for line in fileStr.split('\n'):
 				line = line.strip()
 				# skip empty lines
-				if line=='':
+				if line=='' or '%' in line:
 					continue
 
 				if header:
@@ -52,23 +58,36 @@ def extractABCtxtWorker(dataPack):
 						for head in headerTup:
 							if head in headerDict:
 								if head=='R':
-									headerDict[head] = headerDict[head].lower()
+									headerDict[head] = headerDict[head][0:2]+headerDict[head][2:].lower()
 								outfile.write(headerDict[head]+'\n')
 							else:
 								outfile.write('%s:%s\n' %(head,headerDefault[head]))
-						outfile.write(line)
 
 					elif headerStr.group()[0] in headerTup:
 						headerDict[headerStr.group()[0]] = line
 
-				else:
-					outfile.write(line)
+				if not header:
+					headerStr = re.match('[a-zA-Z]:',line)
+					if (headerStr is not None) or line[:3]=='[V:':
+						break
+
+					# remove stuff inside of double quotes
+					quotes = False
+					addStr = ''
+					for ch in line:
+						if not quotes:
+							addStr += ch
+						if ch=='"':
+							if quotes:
+								addStr = addStr[:-1]
+							quotes = not quotes
+
+					outfile.write(addStr)
 
 			outfile.write('\n')
 
-
-def extractABCtxt(folderName):
-	outputFolder = folderName+'_cleaned'
+def formatABCtxt(folderName, outputFolder):
+	outputFolder = os.path.join(outputFolder, FORMAT_DIR)
 	makedir(outputFolder)
 
 	p = Pool(8)
@@ -76,10 +95,11 @@ def extractABCtxt(folderName):
 	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname2)) 
 										for fname,fname2 in zip(os.listdir(folderName),filenames)]
 
-	p.map(extractABCtxtWorker, mapList)
+	p.map(formatABCtxtWorker, mapList)
 
 MIN_MEASURES = 10
-def abcFileCheckerWorker(dataPack):
+NUM_TRANSPOSITIONS = 3
+def checkABCtxtWorker(dataPack):
 	filename,outputname = dataPack
 	header = True
 	headerDict = {}
@@ -121,19 +141,26 @@ def abcFileCheckerWorker(dataPack):
 			os.remove(outputname)
 			return
 
-		for shift in xrange(-5,6):
+		shift_cands = np.linspace(-5,6,12)
+		np.delete(shift_cands,5)
+		for shift in np.random.choice(shift_cands, NUM_TRANSPOSITIONS):
 			transposeABC(outputname, outputname.replace('.abc','_%s.abc'%shift), shift)
 
 
-def abcFileChecker(folderName):
-	outputFolder = folderName+'_checked'
+def checkABCtxt(outputFolder):
+	"""
+	Checks if the file under @outputFolder meets requirements
+	Also augments the file by transposing to 4 random keys
+	"""
+	folderName = os.path.join(outputFolder, FORMAT_DIR)
+	outputFolder = os.path.join(outputFolder, CHECK_DIR)
 	makedir(outputFolder)
 
 	p = Pool(8)
 	mapList = [(os.path.join(folderName,fname),os.path.join(outputFolder,fname)) 
 										for fname in os.listdir(folderName)]
 
-	p.map(abcFileCheckerWorker, mapList)
+	p.map(checkABCtxtWorker, mapList)
 
 def generateVocab(foldername):
 	"""
@@ -147,7 +174,8 @@ def generateVocab(foldername):
 
 	musicDict = {}
 
-	filenames = [os.path.join(foldername,filename) for filename in os.listdir(foldername)]
+	inputFolderName = os.path.join(foldername, CHECK_DIR)
+	filenames = [os.path.join(inputFolderName,filename) for filename in os.listdir(inputFolderName)]
 	for i,filename in enumerate(filenames):
 		if i%1000==0:
 			print i
@@ -156,6 +184,7 @@ def generateVocab(foldername):
 			meta,music = loadCleanABC(filename)
 		except:
 			print filename
+			continue
 
 		if '\xc5' in music:
 			print filename
@@ -191,8 +220,8 @@ def generateVocab(foldername):
 		music2Store[letter] = i
 
 	# write out to a file
-	pickle.dump(meta2Store, open('vocab_map_meta.p','wb'))
-	pickle.dump(music2Store, open('vocab_map_music.p','wb'))
+	pickle.dump(meta2Store, open(os.path.join(foldername, 'vocab_map_meta.p'),'wb'))
+	pickle.dump(music2Store, open(os.path.join(foldername, 'vocab_map_music.p'),'wb'))
 
 def encodeABCWorker(dataPack):
 	oneHotHeaders = ('R', 'M', 'L', 'K_key', 'K_mode')
@@ -208,36 +237,50 @@ def encodeABCWorker(dataPack):
 	for header in otherHeaders:
 		encodeList.append(meta[header])
 
+	# add the BEGIN token
+	encodeList.append(len(music_map))
+
+	# encode music data
 	for c in music:
 		encodeList.append(music_map[c])
+
+	# add the END token
+	encodeList.append(len(music_map)+1)
 
 	np.save(outputname,np.asarray(encodeList))
 
 
-def encodeABC(folderName):
-	meta_map = pickle.load(open('vocab_map_meta.p','rb'))
-	music_map = pickle.load(open('vocab_map_music.p','rb'))
+def encodeABC(outputFolder):
+	folderName = os.path.join(outputFolder, CHECK_DIR)
 
-	outputFolder_test = folderName+'_test_encoded'
+	meta_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_meta.p'),'rb'))
+	music_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_music.p'),'rb'))
+
+	outputFolder_test = os.path.join(outputFolder, ENCODE_TEST_DIR)
 	makedir(outputFolder_test)
-	outputFolder_train = folderName+'_train_encoded'
+	outputFolder_train = os.path.join(outputFolder, ENCODE_TRAIN_DIR)
 	makedir(outputFolder_train)
 
 	p = Pool(8)
-	testSongs = pickle.load(open('test_songs.p','rb'))
+	testSongs = pickle.load(open(os.path.join(outputFolder, 'test_songs.p'),'rb'))
 	mapList = []
 
 	for filename in os.listdir(folderName):
 		fromName = os.path.join(folderName,filename)
-		outputFolder = outputFolder_test if (filename[:filename.find('_')] in testSongs) else outputFolder_train
-		toName = os.path.join(outputFolder,filename.replace('.abc','.npy'))
+		outFolder = outputFolder_test if (filename[:filename.find('_')] in testSongs) else outputFolder_train
+		toName = os.path.join(outFolder,filename.replace('.abc','.npy'))
 
 		mapList.append((fromName,toName,meta_map,music_map))
 
 	p.map(encodeABCWorker, mapList)
 
 def npy2nnInputWorker(dataPack):
-	stride_sz, window_sz, nnType, output_sz, outputFolder, meta, music, basename = dataPack
+	stride_sz, window_sz, nnType, output_sz, outputFolder, fname = dataPack
+	basename = os.path.basename(fname)
+
+	# open the song (in numpy form)
+	data = np.load(fname)
+	meta,music = data[:7],data[7:]
 
 	count = 0
 	while True:
@@ -267,28 +310,30 @@ def npy2nnInputWorker(dataPack):
 
 		count += 1
 
-def npy2nnInput(h5file, stride_sz, window_sz, nnType, output_sz=0, outputFolder=''):
+	# add another window which includes the last element
+
+def npy2nnInput(outputFolder, stride_sz, window_sz, nnType, output_sz=0):
 	"""
 	Converts encoded npy to an array of tuples for NN input
 
-	@h5file 	- string / filename of h5 file to read from
-	@stride_sz 	- int / stride size
-	@window_sz 	- int / window size of the input
-	@output_sz 	- int / window size of the output (only used for nnType='seq2seq')
-	@nnType 	- string / nn to feed the generated data to.
-			  	  'BOW' 'seq2seq' 'char_rnn'
-	@outputFolder - string / filename of the output
+	@outputFolder 	- string / filename of h5 file to read from
+	@stride_sz 		- int / stride size
+	@window_sz 		- int / window size of the input
+	@output_sz 		- int / window size of the output (only used for nnType='seq2seq')
+	@nnType 		- string / nn to feed the generated data to.
+			 		  'BOW' 'seq2seq' 'char_rnn'
 	"""
 
-	makedir(outputFolder)
+	dir_list = [(NN_INPUT_TEST_DIR,ENCODE_TEST_DIR), (NN_INPUT_TRAIN_DIR,ENCODE_TRAIN_DIR)]
 
 	mapList = []
-	with h5py.File(h5file,'r') as hf_in:
-		for key in hf_in.keys():
-			data = np.array(hf_in.get(key))
-			meta,music = data[:7],data[7:]
+	for outDir,inDir in dir_list:
+		nnFolder = os.path.join(outputFolder, outDir)
+		makedir(nnFolder)
 
-			mapList.append((stride_sz, window_sz, nnType, output_sz, outputFolder, meta, music, key))
+		encodedDir = os.path.join(outputFolder, inDir)
+		for fname in os.listdir(encodedDir):
+			mapList.append((stride_sz, window_sz, nnType, output_sz, nnFolder, os.path.join(encodedDir, fname)))
 
 	p = Pool(8)
 	p.map(npy2nnInputWorker, mapList)
@@ -310,18 +355,19 @@ def loadNNInput(foldername):
 	return input_list
 
 if __name__ == "__main__":
-	print len(loadNNInput('/data/the_session_nn_input_train_window_50_stride_25'))
-	print len(loadNNInput('/data/the_session_nn_input_test_window_50_stride_25'))
-	print len(loadNNInput('/data/the_session_nn_input_test_window_100_stride_50'))
-
+	# npy2nnInputWorker((25,50,'char_rnn',0,'','the_session_processed/the_session_cleaned_checked_test_encoded/The Blacksmithfs reel_3_-4.npy'))
+	
+	# formatABCtxtWorker(('tmp.abc','tmp2.abc'))
+	# print passesABC2ABC('tmp2.abc')
 	# preprocessing pipeline
 	#-----------------------------------
-	# extractABCtxt('the_session')
-	# abcFileChecker('the_session_cleaned')
-	# generateVocab('the_session_cleaned_checked')
-	# encodeABC('the_session_cleaned_checked')
-	# abc2h5('/data/the_session_cleaned_checked_test_encoded','/data/encoded_data_test.h5')
-	# abc2h5('/data/the_session_cleaned_checked_train_encoded','/data/encoded_data_train.h5')
-	# npy2nnInput('/data/encoded_data_train.h5', 50, 100, 'char_rnn', outputFolder='/data/the_session_nn_input_train_window_100_stride_50')
+	originalDataDir = 'tiny'
+	processedDir = 'tiny_processed'
+	formatABCtxt(originalDataDir, processedDir)
+	checkABCtxt(processedDir)
+	testTrainSplit(processedDir, 0.2)
+	generateVocab(processedDir)
+	encodeABC(processedDir)
+	npy2nnInput(processedDir, 50, 100, 'char_rnn')
 	#-----------------------------------
 	pass

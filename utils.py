@@ -1,6 +1,13 @@
 import os
 import numpy as np
 import pretty_midi
+import re
+import pickle
+import random
+
+from collections import Counter
+
+CHECK_DIR = 'checked'
 
 # Midi Related
 #------------------------------------
@@ -61,17 +68,18 @@ def testTrainSplit(folderName, trainRatio):
 	Usage: testTrainSplit('the_session_cleaned', 0.1)
 	"""
 	songlist = set()
-	for filename in os.listdir(folderName):
+	for filename in os.listdir(os.path.join(folderName, CHECK_DIR)):
 		songlist.add(filename[:filename.find('_')])
 
 	songlist = list(songlist)
+	random.shuffle(songlist)
 
 	splitIndx = int(len(songlist)*trainRatio)
 	testSongs = songlist[:splitIndx]
 	trainSongs = songlist[splitIndx:]
 
-	pickle.dump(testSongs, open('test_songs.p','wb'))
-	pickle.dump(trainSongs, open('train_songs.p','wb'))
+	pickle.dump(testSongs, open(os.path.join(folderName, 'test_songs.p'),'wb'))
+	pickle.dump(trainSongs, open(os.path.join(folderName, 'train_songs.p'),'wb'))
 
 #------------------------------------
 
@@ -87,7 +95,7 @@ def transposeABC(fromFile, toFile, shiftLvl):
 	abc2abc.exe taken from http://ifdo.ca/~seymour/runabc/top.html
 	"""
 
-	cmd = 'abcmidi_win32\\abc2abc.exe "%s" -V 0 -t %d -b -r > "%s"' \
+	cmd = 'abcmidi_win32\\abc2abc.exe "%s" -t %d -b -r > "%s"' \
 			%(fromFile,shiftLvl,toFile)
 
 	os.system(cmd)
@@ -187,7 +195,7 @@ def passesABC2ABC(fromFile):
 
 	# error check
 	errorCnt_bar = out.count('Error : Bar')
-	errorCnt = out.count('Error')
+	errorCnt = out.count('Error')-out.count('ignored')
 	if errorCnt>2 or errorCnt!=errorCnt_bar:
 		return False
 	elif errorCnt>0:
