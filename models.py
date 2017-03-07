@@ -29,8 +29,7 @@ class Config(object):
 		self.num_epochs = 30
 		self.keep_prob = 0.6
 
-		# Only for Skip-Gram model
-		self.skip_window = 2
+		# Only for CBOW model
 		self.embed_size = 32
 
 		# Only for Seq2Seq Attention Models
@@ -53,7 +52,7 @@ class CBOW(object):
 		print("Completed Initializing the CBOW Model.....")
 
 
-	def build_model(self):
+	def create_model(self):
 		weight = tf.get_variable("Wout", shape=[self.config.embed_size, self.config.vocab_size],
            			initializer=tf.contrib.layers.xavier_initializer())
         bias = tf.Variable(tf.zeros([self.config.vocab_size]))
@@ -113,7 +112,7 @@ class CharRNN(object):
 	 	embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
 
 	 	# Embedding lookup for Metadata
-	 	embeddings_var_meta = tf.Variable(tf.random_uniform([, self.config.songtype, self.config.meta_embed],
+	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.songtype, self.config.meta_embed],
 	 								 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
 	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state[:, :5])
 
