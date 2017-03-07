@@ -15,6 +15,19 @@ def abc_filenames(datapath):
     return [os.path.join(datapath, f) for f in os.listdir(datapath) if os.path.isfile(os.path.join(datapath, f))]
 
 
+def abc_batch(iterable, n=1):
+    l = len(iterable)
+    batches = []
+    for ndx in range(0, l, n):
+        batches.append(iterable[ndx:min(ndx + n, l)])
+    return batches
+
+
+def read_abc_pickle(train_file):
+    with open(train_file, 'r') as fd:
+        return pickle.load(fd)
+
+
 def compute_save_vocabulary(datapath):
     # Iterate through whole dataset directory
     filenames = abc_filenames(datapath)

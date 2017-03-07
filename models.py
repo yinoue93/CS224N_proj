@@ -45,7 +45,7 @@ class SkipGram(object):
 		self.config = Config()
 		self.input_placeholder = tf.placeholder(tf.int32, shape=[None])
 		self.label_placeholder = tf.placeholder(tf.int32, shape=[None, 1])
-		self.embeddings = tf.Variable(tf.random_uniform([self.config.vocab_size, 
+		self.embeddings = tf.Variable(tf.random_uniform([self.config.vocab_size,
 								self.config.embed_size], -1.0, 1.0))
 
 
@@ -98,7 +98,7 @@ class CharRNN(object):
 	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state[:, :5])
 
 	 	# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
-	 	embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size-2])  
+	 	embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size-2])
 	 	embeddings_meta = tf.concat([embeddings_meta, tf.constant(self.initial_state[:, 5:])], axis=0)
 
 	 	output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=embeddings_meta)
@@ -158,7 +158,7 @@ class CharRNN(object):
 # 	def create_model(self, is_train):
 
 # 	 	if is_train:
-# 	 		self.cell = rnn.DropoutWrapper(self.cell, output_keep_prob=self.config.keep_prob, 
+# 	 		self.cell = rnn.DropoutWrapper(self.cell, output_keep_prob=self.config.keep_prob,
 # 	 						input_keep_prob=1.0, output_keep_prob=1.0)
 # 	 	rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
 
@@ -172,7 +172,7 @@ class CharRNN(object):
 # 	 	num_dims_meta = self.meta_size/2
 # 	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.batch_size, num_dims_meta, self.config.meta_size],
 # 	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
-# 	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state) 
+# 	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state)
 
 # 	 	# Unrolling the timesteps of the RNN
 # 	 	encoder_outputs, encoder_state = rnn.dynamic_rnn( cell=rnn_model ,inputs=embeddings_char,
@@ -191,7 +191,7 @@ class CharRNN(object):
 # 	              					attention_score_fn=attention_score_fn,
 # 	              					attention_construct_fn=attention_construct_fn)
 
-		 	
+
 # 		 	decoder_outputs_train, decoder_state_train, _ = seq2seq.dynamic_rnn_decoder(
 # 								            cell=, decoder_fn=decoder_fn_train,
 # 								            inputs=decoder_inputs, sequence_length=decoder_length,
@@ -221,26 +221,3 @@ class CharRNN(object):
 
 
 # class GenAdversarialNet(object):
-
-
-
-
-
-
-
-
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-	
