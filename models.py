@@ -25,6 +25,7 @@ class Config(object):
 		self.vocab_size = 124
 		self.meta_embed = self.songtype/2
 		self.hidden_size = self.meta_embed*5 #+ 2
+		self.num_meta = 7
 		self.num_layers = 2
 		self.num_epochs = 30
 		self.keep_prob = 0.6
@@ -88,13 +89,14 @@ class CharRNN(object):
 		elif cell_type == 'lstm':
 			self.cell = rnn.BasicLSTMCell(self.config.hidden_size)
 
-		self.initial_state = self.cell.zero_state(self.config.batch_size, dtype=tf.int32)
+		# self.initial_state = self.cell.zero_state(self.config.batch_size, dtype=tf.int32)
 		# input_shape = (None,) + tuple([self.config.max_length,input_size])
 		input_shape = (None,) + tuple([input_size])
 		# output_shape = (None,) + tuple([self.config.max_length,label_size])
 		output_shape = (None,) + tuple([label_size])
 		self.input_placeholder = tf.placeholder(tf.int32, shape=input_shape, name='Input')
 		self.label_placeholder = tf.placeholder(tf.int32, shape=output_shape, name='Output')
+		self.initial_state = tf.placeholder(tf.int32, shape=[None, self.config.num_meta], name='Initial_State')
 
 		print("Completed Initializing the Char RNN Model.....")
 
@@ -124,17 +126,17 @@ class CharRNN(object):
 		# print self.input_placeholder.get_shape().as_list()
 
 		initial_tuple = (embeddings_meta, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
-	 	output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
-	 	self.pred = output
+	 	self.output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
+	 	self.pred = tf.nn.softmax(self.output)
 
 	 	print("Built the Char RNN Model...")
 
-	 	return output, state
+	 	return self.pred, state
 
 
 
 	def train(self, max_norm=5, op='adam'):
-		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
+		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output, labels=self.label_placeholder))
 		tvars = tf.trainable_variables()
 
 		# Gradient clipping

@@ -3,7 +3,7 @@ import numpy as np
 import os
 import re
 import json
-
+import pickle
 
 # Metadata + ~50 characters, then sliding window of (t+1)
 # Feed dict should pass in an intial state (previous final state)
@@ -19,7 +19,8 @@ def abc_batch(iterable, n=1):
     l = len(iterable)
     batches = []
     for ndx in range(0, l, n):
-        batches.append(iterable[ndx:min(ndx + n, l)])
+        if min(ndx + n, l) - ndx == n:
+            batches.append(iterable[ndx:(ndx + n)])
     return batches
 
 

@@ -1,6 +1,13 @@
 import os
 import numpy as np
 import pretty_midi
+import re
+import pickle
+import random
+
+from collections import Counter
+
+CHECK_DIR = 'checked'
 
 # Midi Related
 #------------------------------------
@@ -56,22 +63,32 @@ def abc2h5(folderName='the_session_cleaned_checked_encoded', outputFile='encoded
 		encodeDict[filestr] = np.load(os.path.join(folderName,filestr))
 	write2hdf5(outputFile,encodeDict)
 
-def testTrainSplit(folderName, trainRatio):
+def datasetSplit(folderName, setRatio):
 	"""
-	Usage: testTrainSplit('the_session_cleaned', 0.1)
+	Split the dataset into training, testing, and dev sets.
+	Usage: testTrainSplit('the_session_cleaned', (0.8,0.1,0.1))
 	"""
+	if sum(setRatio)!=1:
+		print '[ERROR] datasetSplit(): %f+%f+%f does not equal 1...' \
+				%(setRatio[0],setRatio[1],setRatio[2])
+		exit(0)
+
 	songlist = set()
-	for filename in os.listdir(folderName):
+	for filename in os.listdir(os.path.join(folderName, CHECK_DIR)):
 		songlist.add(filename[:filename.find('_')])
 
 	songlist = list(songlist)
+	random.shuffle(songlist)
 
-	splitIndx = int(len(songlist)*trainRatio)
-	testSongs = songlist[:splitIndx]
-	trainSongs = songlist[splitIndx:]
+	train_test_split_indx = int(len(songlist)*setRatio[0])
+	test_dev_split_indx = int(len(songlist)*(setRatio[0]+setRatio[1]))
+	trainSongs = songlist[:train_test_split_indx]
+	testSongs = songlist[train_test_split_indx:test_dev_split_indx]
+	devSongs = songlist[test_dev_split_indx:]
 
-	pickle.dump(testSongs, open('test_songs.p','wb'))
-	pickle.dump(trainSongs, open('train_songs.p','wb'))
+	pickle.dump(trainSongs, open(os.path.join(folderName, 'train_songs.p'),'wb'))
+	pickle.dump(testSongs, open(os.path.join(folderName, 'test_songs.p'),'wb'))
+	pickle.dump(devSongs, open(os.path.join(folderName, 'dev_songs.p'),'wb'))
 
 #------------------------------------
 
@@ -87,7 +104,7 @@ def transposeABC(fromFile, toFile, shiftLvl):
 	abc2abc.exe taken from http://ifdo.ca/~seymour/runabc/top.html
 	"""
 
-	cmd = 'abcmidi_win32\\abc2abc.exe "%s" -V 0 -t %d -b -r > "%s"' \
+	cmd = 'abcmidi_win32\\abc2abc.exe "%s" -t %d -b -r > "%s"' \
 			%(fromFile,shiftLvl,toFile)
 
 	os.system(cmd)
@@ -187,7 +204,7 @@ def passesABC2ABC(fromFile):
 
 	# error check
 	errorCnt_bar = out.count('Error : Bar')
-	errorCnt = out.count('Error')
+	errorCnt = out.count('Error')-out.count('ignored')
 	if errorCnt>2 or errorCnt!=errorCnt_bar:
 		return False
 	elif errorCnt>0:
