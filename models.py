@@ -23,8 +23,11 @@ class Config(object):
 		self.max_length = 8
 
 		self.vocab_size = 124
+		# self.meta_embed = self.songtype
 		self.meta_embed = self.songtype/2
 		self.hidden_size = self.meta_embed*5 #+ 2
+		self.embedding_dims = self.vocab_size*3/4
+		self.vocab_meta = self.songtype + self.sign + self.notesize+ self.flats + self.mode
 		self.num_meta = 7
 		self.num_layers = 2
 		self.num_epochs = 30
@@ -80,6 +83,8 @@ class CBOW(object):
 class CharRNN(object):
 
 	def __init__(self, input_size, label_size, cell_type):
+		self.input_size = input_size
+		self.label_size = label_size
 		self.cell_type = cell_type
 		self.config = Config()
 
@@ -109,13 +114,12 @@ class CharRNN(object):
 	 	rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
 
 	 	# Embedding lookup for ABC format characters
-	 	num_dims = self.config.vocab_size*3/4
-	 	embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, num_dims],
+	 	embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
 	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
 	 	embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
 
 	 	# Embedding lookup for Metadata
-	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.songtype, self.config.meta_embed],
+	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.vocab_meta, self.config.meta_embed],
 	 								 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
 	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state[:, :5])
 
@@ -127,8 +131,20 @@ class CharRNN(object):
 		# print self.input_placeholder.get_shape().as_list()
 
 		initial_tuple = (embeddings_meta, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
-	 	self.output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
-	 	self.pred = tf.nn.softmax(self.output)
+	 	rnn_output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
+
+		decode_var = tf.Variable(tf.random_uniform([self.config.hidden_size, self.config.vocab_size],
+	 									 0, 10, dtype=tf.float32, seed=3), name='char_decode')
+		decode_bias = tf.Variable(tf.random_uniform([self.config.vocab_size],
+	 									 0, 10, dtype=tf.float32, seed=3), name='char_decode_bias')
+		decode_list = []
+		for i in xrange(self.input_size):
+			decode_list.append(tf.matmul(rnn_output[:, i, :], decode_var) + decode_bias)
+		self.output = tf.stack(decode_list, axis=1)
+
+		# print self.output.get_shape().as_list()
+		# print embeddings_var.get_shape().as_list()
+		self.pred = tf.nn.softmax(self.output)
 
 	 	print("Built the Char RNN Model...")
 
