@@ -34,7 +34,7 @@ Length is calculated by counting the distinct number of times the character '|' 
 
 |                 | Description                                                                  | .abc Tag | Dimensions | Examples (Top 3)    |
 |-----------------|------------------------------------------------------------------------------|----------|------------|---------------------|
-| Song Type       | Song Genre                                                                   |     R    |     17     | Reel, Jig, Hornpipe |
+| Song Type       | Song Genre                                                                   |     R    |     16     | Reel, Jig, Hornpipe |
 | Time Signature  | Specifies how many beats are in each bar and which note value gets one beat  |     M    |     15     | 4/4, 6/8, 3/4       |
 | Note Unit Size  | Specifies which note value gets one beat in the text file                    |     L    |      3     | 1/8, 1/4, 1/16      |
 | Number of Flats | Positive for songs with flats, 0 for neutral, negative for songs with sharps |     K    |     12     | -1, -2, -3          |
@@ -42,4 +42,4 @@ Length is calculated by counting the distinct number of times the character '|' 
 | Song Length     | Number of measures in a song                                                 |          |            |                     |
 | Song Complexity | Busy-ness of a song.                                                         |          |            |                     |
 
-The song portion of the numpy array is **119** dimensions.
+The song portion of the numpy array is **82** dimensions (i.e. **80** music characters and **2** BEGIN/END special characters).
