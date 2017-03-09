@@ -104,7 +104,7 @@ class CharRNN(object):
 		self.label_placeholder = tf.placeholder(tf.int32, shape=output_shape, name='Output')
 		self.initial_state = tf.placeholder(tf.int32, shape=[None, self.config.num_meta], name='Initial_State')
 
-		print("Completed Initializing the Char RNN Model.....")
+		print "Completed Initializing the Char RNN Model using a {0} cell".format(cell_type.upper())
 
 
 	def create_model(self, is_train=True):
@@ -130,7 +130,10 @@ class CharRNN(object):
 		# print embeddings.get_shape().as_list()
 		# print self.input_placeholder.get_shape().as_list()
 
-		initial_tuple = (embeddings_meta, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
+		if self.cell_type == 'lstm':
+			initial_tuple = tuple([rnn.LSTMStateTuple(embeddings_meta, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32)) for idx in xrange(self.config.num_layers)])
+	  	else:
+			initial_tuple = (embeddings_meta, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
 	 	rnn_output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
 
 		decode_var = tf.Variable(tf.random_uniform([self.config.hidden_size, self.config.vocab_size],
@@ -141,9 +144,6 @@ class CharRNN(object):
 		for i in xrange(self.input_size):
 			decode_list.append(tf.matmul(rnn_output[:, i, :], decode_var) + decode_bias)
 		self.output = tf.stack(decode_list, axis=1)
-
-		# print self.output.get_shape().as_list()
-		# print embeddings_var.get_shape().as_list()
 		self.pred = tf.nn.softmax(self.output)
 
 	 	print("Built the Char RNN Model...")

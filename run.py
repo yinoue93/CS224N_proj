@@ -29,7 +29,8 @@ def main(args):
         curModel = Seq2SeqRNN(input_size, label_size, 'rnn')
     elif args.model == 'char':
         # curModel = CharRNN(input_size, label_size, 'rnn')
-        curModel = CharRNN(input_size, label_size, 'gru')
+        # curModel = CharRNN(input_size, label_size, 'gru')
+        curModel = CharRNN(input_size, label_size, 'lstm')
 
 
     output, state = curModel.create_model(is_train = args.train)
