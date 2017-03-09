@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import os
 import re
 import pickle
+import shutil
 
 import numpy as np
 
@@ -103,6 +104,8 @@ MIN_MEASURES = 10
 NUM_TRANSPOSITIONS = 3
 def checkABCtxtWorker(dataPack):
 	filename,outputname = dataPack
+
+	print filename
 	header = True
 	headerDict = {}
 	headerTup = ('T', 'R', 'M', 'L', 'K', 'Q')
@@ -146,7 +149,7 @@ def checkABCtxtWorker(dataPack):
 		shift_cands = np.linspace(-5,6,12)
 		np.delete(shift_cands,5)
 		for shift in np.random.choice(shift_cands, NUM_TRANSPOSITIONS):
-			transposeABC(outputname, outputname.replace('.abc','_%s.abc'%shift), shift)
+			transposeABC(outputname, outputname.replace('.abc','_%d.abc'%shift), shift)
 
 
 def checkABCtxt(outputFolder):
@@ -230,7 +233,11 @@ def encodeABCWorker(dataPack):
 	otherHeaders = ('len', 'complexity')
 
 	filename,outputname,meta_map,music_map = dataPack
-	meta,music = loadCleanABC(filename)
+	print filename
+	try:
+		meta,music = loadCleanABC(filename)
+	except:
+		return
 
 	encodeList = []
 	# encode the metadata info
@@ -363,64 +370,70 @@ def npy2nnInput(outputFolder, stride_sz, window_sz, nnType, output_sz=0, num_buc
 
 	for outDir,inDir in dir_list:
 		inputList = []
-		nnFolder = os.path.join(outputFolder, outDir)
+		nnFolder = os.path.join(outputFolder, 
+								outDir+'_stride_%d_window_%d_nnType_%s'%(stride_sz,window_sz,nnType))
 		makedir(nnFolder)
 
 		encodedDir = os.path.join(outputFolder, inDir)
 		for fname in os.listdir(encodedDir):
 			inputList.append((stride_sz, window_sz, nnType, output_sz, os.path.join(encodedDir, fname)))
 
-		random.shuffle(inputList)
 		mapList = []
 		for i in range(num_buckets):
-			mapList.append((os.path.join(nnFolder,'stride_%d_window_%d_nnType_%s_%d.p'%(stride_sz,window_sz,nnType,i)), 
+			mapList.append((os.path.join(nnFolder,'%d.p'%i), 
 							inputList[int(i*len(inputList)/num_buckets)
 										:int((i+1)*len(inputList)/num_buckets)]))
 
 		p = Pool(8)
 		p.map(npy2nnInputWorker, mapList)
 
-def shuffleDataset(foldername):
-	dir_list = (NN_INPUT_TEST_DIR, NN_INPUT_TRAIN_DIR, NN_INPUT_DEV_DIR)
+		shuffleDataset(nnFolder)
+		shutil.rmtree(nnFolder)
 
-	for outdir in dir_list:
-		originalDir = os.path.join(foldername,outdir)
-		outFolder = originalDir+'_shuffled'
-		makedir(outFolder)
+def shuffleDataset(originalDir):
+	print 'Shuffling %s' % originalDir
+	outFolder = originalDir+'_shuffled'
+	makedir(outFolder)
 
-		input_list = []
-		filenames = os.listdir(originalDir)
-		num_buckets = len(filenames)
-		print 'Loading data'
-		for filename in filenames:
-			print filename
-			with open(os.path.join(originalDir,filename),'r') as f:
-				input_list += pickle.load(f)
+	input_list = []
+	filenames = os.listdir(originalDir)
+	num_buckets = len(filenames)
+	print 'Loading data'
+	for filename in filenames:
+		print filename
+		with open(os.path.join(originalDir,filename),'r') as f:
+			input_list += pickle.load(f)
 
-		random.shuffle(input_list)
+	random.shuffle(input_list)
 
-		print 'Done shuffling, saving the shuffled data...'
-		for i,filename in enumerate(filenames):
-			print filename
-			with open(os.path.join(outFolder,filename),'w') as f:
-				input_frac = input_list[int(i*len(input_list)/len(filenames))
-										:int((i+1)*len(input_list)/len(filenames))]
-				pickle.dump(input_frac, f)
+	print 'Done shuffling, saving the shuffled data...'
+	for i,filename in enumerate(filenames):
+		print filename
+		with open(os.path.join(outFolder,filename),'w') as f:
+			input_frac = input_list[int(i*len(input_list)/len(filenames))
+									:int((i+1)*len(input_list)/len(filenames))]
+			pickle.dump(input_frac, f)
 
 if __name__ == "__main__":
-	# formatABCtxtWorker(('tmp.abc','tmp2.abc'))
-	# print passesABC2ABC('tmp2.abc')
-
 	# preprocessing pipeline
 	#-----------------------------------
-	originalDataDir = 'small'
+	originalDataDir = '/data/montreal_plus_local'
 	processedDir = originalDataDir+'_processed'
+	print '-'*20 + 'FORMATTING' + '-'*20
 	formatABCtxt(originalDataDir, processedDir)
+	print '-'*20 + 'CHECKING' + '-'*20
 	checkABCtxt(processedDir)
+	print '-'*20 + 'SPLITTING' + '-'*20
 	datasetSplit(processedDir, (0.8,0.1,0.1))
+	print '-'*20 + 'GENERATING VOCAB' + '-'*20
 	generateVocab(processedDir)
+	print '-'*20 + 'ENCODING' + '-'*20
 	encodeABC(processedDir)
+	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	npy2nnInput(processedDir, 25, 25, 'char_rnn')
+	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
 	npy2nnInput(processedDir, 50, 100, 'char_rnn')
-	shuffleDataset(processedDir)
+	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	npy2nnInput(processedDir, 4, 20, 'char_rnn')
 	#-----------------------------------
 	pass
