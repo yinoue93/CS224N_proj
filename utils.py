@@ -104,8 +104,15 @@ def transposeABC(fromFile, toFile, shiftLvl):
 	abc2abc.exe taken from http://ifdo.ca/~seymour/runabc/top.html
 	"""
 
-	cmd = 'abcmidi_win32\\abc2abc.exe "%s" -t %d -b -r > "%s"' \
-			%(fromFile,shiftLvl,toFile)
+	# am I being ran on a Windows machine ('nt'), or a linux machine('posix')?
+	if os.name=='posix':
+		exe_cmd = 'abc2abc'
+	elif os.name=='nt':
+		exe_cmd = 'abcmidi_win32\\abc2abc.exe'
+
+	cmd = '%s "%s" -t %d -e > "%s"' \
+			%(exe_cmd,fromFile,shiftLvl,toFile)
+	print toFile
 
 	os.system(cmd)
 
@@ -158,6 +165,7 @@ def loadCleanABC(abcname):
 	@music - string of the music
 	"""
 	meta = {}
+	music = ''
 	counter = 7
 	with open(abcname,'r') as abcfile:
 		for line in abcfile:
@@ -169,7 +177,7 @@ def loadCleanABC(abcname):
 						meta['K_key'],meta['K_mode'] = keySigDecomposer(line[2:-1])
 					except:
 						print 'Key signature decomposition failed for file: ' + abcname
-						exit(0)
+						raise Exception('Key signature decomposition failed for file: ' + abcname)
 				elif line[0]=='M':
 					if 'C' in line[2:-1]:
 						meta['M'] = '4/4'
@@ -196,16 +204,22 @@ def passesABC2ABC(fromFile):
 	"""
 	Returns true if the .abc file in @fromFile passes the abc2abc.exe check
 	"""
-	cmd = 'abcmidi_win32\\abc2abc.exe'
+
+	# am I being ran on a Windows machine ('nt'), or a linux machine('posix')?
+	if os.name=='posix':
+		cmd = 'abc2abc'
+	elif os.name=='nt':
+		cmd = 'abcmidi_win32\\abc2abc.exe'
+
 	cmdlist = [cmd, fromFile]
-	proc = subprocess.Popen(cmdlist, stdout=subprocess.PIPE, shell=True)
+	proc = subprocess.Popen(cmdlist, stdout=subprocess.PIPE)
 
 	(out, err) = proc.communicate()
 
 	# error check
 	errorCnt_bar = out.count('Error : Bar')
-	errorCnt = out.count('Error')-out.count('ignored')
-	if errorCnt>2 or errorCnt!=errorCnt_bar:
+	errorCnt = out.count('Error') - out.count('ignored')
+	if errorCnt_bar>2 or errorCnt!=errorCnt_bar:
 		return False
 	elif errorCnt>0:
 		barErrorList = re.findall('Bar [0-9]+', out)
