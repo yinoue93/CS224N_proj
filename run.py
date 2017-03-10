@@ -14,9 +14,9 @@ import matplotlib.pyplot as plt
 
 
 # TRAIN_DATA = '/data/small_processed/nn_input_train'
-# TEST_DATA = '/data/small_processed/nn_input_test'
+# DEVELOPMENT_DATA = '/data/small_processed/nn_input_test'
 TRAIN_DATA = '/data/the_session_processed/nn_input_train_stride_25_window_25_nnType_char_rnn_shuffled'
-TEST_DATA = '/data/the_session_processed/nn_input_dev_stride_25_window_25_nnType_char_rnn_shuffled'
+DEVELOPMENT_DATA = '/data/the_session_processed/nn_input_dev_stride_25_window_25_nnType_char_rnn_shuffled'
 VOCAB_DATA = '/data/the_session_processed/vocab_map_music.p'
 
 CKPT_DIR = '/data/ckpt'
@@ -46,6 +46,34 @@ def create_metrics_op(output, labels, vocabulary_size):
 
 
 
+def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
+    fig, ax = plt.subplots(figsize=(16, 16))
+    res = ax.imshow(confusion_matrix.astype(int), interpolation='nearest', cmap=plt.cm.jet)
+    cb = fig.colorbar(res)
+
+    # Get vocabulary components
+    vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
+    # vocabulary_values = vocabulary.values()
+    # vocabulary_values += [vocabulary_values[-1]+1, vocabulary_values[-1]+2]
+    for c in characters_remove:
+        vocabulary_keys.remove(c)
+    vocabulary_values = range(len(vocabulary_keys))
+    vocabulary_size = len(vocabulary_keys)
+
+    if annotate:
+        for x in xrange(vocabulary_size):
+            for y in xrange(vocabulary_size):
+                ax.annotate(str(confusion_matrix[x, y]), xy=(y, x),
+                            horizontalalignment='center',
+                            verticalalignment='center',
+                            fontsize=4)
+
+    plt.xticks(vocabulary_values, vocabulary_keys)
+    plt.yticks(vocabulary_values, vocabulary_keys)
+    fig.savefig('confusion_matrix_epoch{0}.png'.format(epoch))
+
+
+
 def run_model(args):
     input_size = 25
     initial_size = 7
@@ -60,10 +88,7 @@ def run_model(args):
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
-    vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
-    vocabulary_values = vocabulary.values()
-    vocabulary_values += [vocabulary_values[-1]+1, vocabulary_values[-1]+2]
-    vocabulary_size = len(vocabulary_keys)
+    vocabulary_size = len(vocabulary)
 
     output_op, state_op = curModel.create_model(is_train = args.train)
     input_placeholder, label_placeholder, initial_placeholder, train_op, loss_op = curModel.train()
@@ -73,13 +98,9 @@ def run_model(args):
     if args.train:
         print "Reading in training filenames."
         train_filenames = reader.abc_filenames(TRAIN_DATA)
-        # print "Creating training batches"
-        # train_batches = reader.abc_batch(train_filenames, n=BATCH_SIZE)
     else:
         print "Reading in testing filenames."
-        test_filenames = reader.abc_filenames(TEST_DATA)
-        # print "Creating testing batches."
-        # test_batches = reader.abc_batch(test_filenames, n=BATCH_SIZE)
+        test_filenames = reader.abc_filenames(DEVELOPMENT_DATA)
 
 
     global_step = tf.Variable(0, trainable=False, name='global_step') #tf.contrib.framework.get_or_create_global_step()
@@ -148,27 +169,56 @@ def run_model(args):
                 checkpoint_path = os.path.join(CKPT_DIR, 'model.ckpt')
                 saver.save(session, checkpoint_path, global_step=i)
 
-                fig, ax = plt.subplots(figsize=(16, 16))
-                res = ax.imshow(confusion_matrix, interpolation='nearest', cmap=plt.cm.jet)
-                cb = fig.colorbar(res)
-                for x in xrange(vocabulary_size):
-                    for y in xrange(vocabulary_size):
-                        ax.annotate(str(confusion_matrix[x, y]), xy=(y, x),
-                                    horizontalalignment='center',
-                                    verticalalignment='center')
-                plt.xticks(vocabulary_values, vocabulary_keys)
-                plt.yticks(vocabulary_values, vocabulary_keys)
-                fig.savefig('confusion_matrix_epoch{0}.png'.format(i))
+                plot_confusion(confusion_matrix, vocabulary, i, characters_remove=['|', '2'])
 
         # Test Model
         else:
-            for test_batch in test_batches:
-                # Get test data - into feed_dict
-                data = map(reader.read_abc_pickle, test_batch)
-                meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data)])
+            # Session
+            ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
+            if ckpt and ckpt.model_checkpoint_path:
+                saver.restore(session, ckpt.model_checkpoint_path)
+                print(ckpt.model_checkpoint_path)
+            else:
+                print('No checkpoint file found!')
+                return
 
-                # TODO: testing code
-                pass
+            confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
+            batch_accuracies = []
+
+            test_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
+
+            print "Running test set from file {0}".format(DEVELOPMENT_DATA)
+            random.shuffle(test_filenames)
+            for j, test_file in enumerate(test_filenames):
+                # Get test data - into feed_dict
+                data = reader.read_abc_pickle(test_file)
+                random.shuffle(data)
+                test_batches = reader.abc_batch(data, n=BATCH_SIZE)
+                for k, train_batch in enumerate(train_batches):
+                    meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*test_batches)])
+
+                    feed_dict = {
+                        input_placeholder: input_window_batch,
+                        initial_placeholder: meta_batch,
+                        label_placeholder: output_window_batch
+                    }
+
+                    summary, loss, output, state, prediction, accuracy, conf = session.run([summary_op, loss_op, output_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                    train_writer.add_summary(summary, step)
+
+                    confusion_matrix += conf
+                    batch_accuracies.append(accuracy)
+
+                    print "Average accuracy per batch {0}".format(accuracy)
+                    print "Batch Loss: {0}".format(loss)
+                    # print "Output Predictions: {0}".format(prediction)
+                    # print "Input Labels: {0}".format(output_window_batch)
+                    # print "Output Prediction Probabilities: {0}".format(output_pred)
+                    # print "Output State: {0}".format(output_state)
+
+            plot_confusion(confusion_matrix, vocabulary, "_dev-set", characters_remove=['|', '2'])
+            test_accuracy = np.mean(batch_accuracies)
+            print "Model TEST accuracy: {0}".format(test_accuracy)
 
 
 
