@@ -24,13 +24,12 @@ class Config(object):
 
 		self.vocab_size = 124
 		# self.meta_embed = self.songtype
-		self.meta_embed = self.songtype/2
+		self.meta_embed = 100 #self.songtype
 		self.hidden_size = self.meta_embed*5 #+ 2
 		self.embedding_dims = self.vocab_size*3/4
 		self.vocab_meta = self.songtype + self.sign + self.notesize+ self.flats + self.mode
 		self.num_meta = 7
 		self.num_layers = 2
-		self.num_epochs = 30
 		self.keep_prob = 0.6
 
 		# Only for CBOW model
@@ -269,86 +268,86 @@ class CharRNN(object):
 
 
 
-class Discriminator(object):
+# class Discriminator(object):
 
-	def __init__(self, inputs, labels, is_training, batch_size,use_lrelu=True, use_batchnorm=False, dropout=None, reuse=True):
-		self.input = inputs
-		self.labels = labels
-		self.batch_size = batch_size
-		self.is_training = is_training
-		self.reuse = reuse
-		self.dropout = dropout
-		self.use_batchnorm = use_batchnorm
-		self.use_lrelu = use_lrelu
-		self.config = Config()
+# 	def __init__(self, inputs, labels, is_training, batch_size,use_lrelu=True, use_batchnorm=False, dropout=None, reuse=True):
+# 		self.input = inputs
+# 		self.labels = labels
+# 		self.batch_size = batch_size
+# 		self.is_training = is_training
+# 		self.reuse = reuse
+# 		self.dropout = dropout
+# 		self.use_batchnorm = use_batchnorm
+# 		self.use_lrelu = use_lrelu
+# 		self.config = Config()
 
-	def lrelu(self, x, leak=0.2, name='lrelu'):
-		return tf.maximum(x, leak*x)
+# 	def lrelu(self, x, leak=0.2, name='lrelu'):
+# 		return tf.maximum(x, leak*x)
 
-	def conv_layer(self, inputs, filterSz1, strideSz1, scope):
-		l1 = tf.nn.conv2d(inputs,filterSz1,strideSz1,padding='SAME')
-		if use_batchnorm:
-			l1 = tf.contrib.layers.batch_norm(l1, decay=0.9,center=True,scale=True,
-						epsilon=1e-8,is_training=is_training, reuse=self.reuse, trainable=True, scope=scope)
+# 	def conv_layer(self, inputs, filterSz1, strideSz1, scope):
+# 		l1 = tf.nn.conv2d(inputs,filterSz1,strideSz1,padding='SAME')
+# 		if use_batchnorm:
+# 			l1 = tf.contrib.layers.batch_norm(l1, decay=0.9,center=True,scale=True,
+# 						epsilon=1e-8,is_training=is_training, reuse=self.reuse, trainable=True, scope=scope)
 
-		if use_lrelu:
-			l2 = self.lrelu(l1)
-		else:
-			l2 = tf.nn.relu(l1)
+# 		if use_lrelu:
+# 			l2 = self.lrelu(l1)
+# 		else:
+# 			l2 = tf.nn.relu(l1)
 
-		if self.dropout is not None and self.is_training == True:
-			l2 = tf.nn.dropout(l2, self.dropout)
+# 		if self.dropout is not None and self.is_training == True:
+# 			l2 = tf.nn.dropout(l2, self.dropout)
 
-		return l2
-
-
-	def create_model(self):
-		with tf.variable_scope("discriminator") as scope:
-			if self.reuse:
-				scope.reuse_variables()
+# 		return l2
 
 
-			filterSz1 = [3, self.config.embedding_dims,1, self.config.numFilters1]
-			strideSz1 = [1,1,1,1]
-			conv_layer1 = self.conv_layer(self.input,filterSz1,strideSz1,padding='SAME', scope)
-
-			filterSz2 = [3, 1, self.config.numFilters, self.config.numFilters]
-			strideSz2 = [1,1,1,1]
-			conv_layer2 = self.conv_layer(conv_layer1,filterSz2,strideSz2,padding='SAME', scope)
-
-			win_size = [1,3,1,1]
-			strideSz3 = [1,1,1,1]
-			conv_layer3 = tf.nn.max_pool(conv_layer2,ksize=win_size,strides=strideSz3, padding='SAME')
-
-			layerShape = conv_layer3.get_shape().as_list()
-			numParams = reduce(lambda x, y: x*y, layerShape[1:])
-
-			layer_flatten = tf.reshape(conv_layer3, [-1, numParams])
-
-			layer4 = tf.contrib.layers.fully_connected(layer_flatten, num_outputs=self.config.hidden_units,
-						reuse=self.reuse,trainable=True, scope=scope)
-
-			if self.dropout is not None and self.is_training == True:
-				layer4 = tf.nn.dropout(layer4, self.dropout)
+# 	def create_model(self):
+# 		with tf.variable_scope("discriminator") as scope:
+# 			if self.reuse:
+# 				scope.reuse_variables()
 
 
-			layer5 = tf.contrib.layers.fully_connected(layer4, num_outputs=self.config.num_outputs,
-						reuse=self.reuse,trainable=True, scope=scope)
+# 			filterSz1 = [3, self.config.embedding_dims,1, self.config.numFilters1]
+# 			strideSz1 = [1,1,1,1]
+# 			conv_layer1 = self.conv_layer(self.input,filterSz1,strideSz1,padding='SAME', scope)
 
-			self.output = layer5
-			self.pred = tf.nn.softmax(layer5)
+# 			filterSz2 = [3, 1, self.config.numFilters, self.config.numFilters]
+# 			strideSz2 = [1,1,1,1]
+# 			conv_layer2 = self.conv_layer(conv_layer1,filterSz2,strideSz2,padding='SAME', scope)
 
-			return self.pred
+# 			win_size = [1,3,1,1]
+# 			strideSz3 = [1,1,1,1]
+# 			conv_layer3 = tf.nn.max_pool(conv_layer2,ksize=win_size,strides=strideSz3, padding='SAME')
+
+# 			layerShape = conv_layer3.get_shape().as_list()
+# 			numParams = reduce(lambda x, y: x*y, layerShape[1:])
+
+# 			layer_flatten = tf.reshape(conv_layer3, [-1, numParams])
+
+# 			layer4 = tf.contrib.layers.fully_connected(layer_flatten, num_outputs=self.config.hidden_units,
+# 						reuse=self.reuse,trainable=True, scope=scope)
+
+# 			if self.dropout is not None and self.is_training == True:
+# 				layer4 = tf.nn.dropout(layer4, self.dropout)
+
+
+# 			layer5 = tf.contrib.layers.fully_connected(layer4, num_outputs=self.config.num_outputs,
+# 						reuse=self.reuse,trainable=True, scope=scope)
+
+# 			self.output = layer5
+# 			self.pred = tf.nn.softmax(layer5)
+
+# 			return self.pred
 			
 
 
-	def train(self, op='adam'):
-		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
-						 labels=self.labels))
+# 	def train(self, op='adam'):
+# 		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
+# 						 labels=self.labels))
 
 
-		train_op = tf.train.AdamOptimizer(self.config.cnn_lr).minimize(self.loss)
-		return train_op
+# 		train_op = tf.train.AdamOptimizer(self.config.cnn_lr).minimize(self.loss)
+# 		return train_op
 
 
 
