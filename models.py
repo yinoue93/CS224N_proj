@@ -320,10 +320,7 @@ class Discriminator(object):
 			strideSz3 = [1,1,1,1]
 			conv_layer3 = tf.nn.max_pool(conv_layer2,ksize=win_size,strides=strideSz3, padding='SAME')
 
-			layerShape = conv_layer3.get_shape().as_list()
-			numParams = reduce(lambda x, y: x*y, layerShape[1:])
-
-			layer_flatten = tf.reshape(conv_layer3, [-1, numParams])
+			layer_flatten = tf.contrib.layers.flatten(conv_layer3, scope=scope)
 
 			layer4 = tf.contrib.layers.fully_connected(layer_flatten, num_outputs=self.config.hidden_units,
 						reuse=self.reuse,trainable=True, scope=scope)
@@ -352,4 +349,20 @@ class Discriminator(object):
 
 
 
-# class GenAdversarialNet(object):
+class GenAdversarialNet(object):
+
+
+	def __init__(self, inputs, labels, is_training, batch_size,use_lrelu=True, use_batchnorm=False, dropout=None, reuse=True):
+
+
+
+
+
+
+
+
+
+
+
+
+
