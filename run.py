@@ -11,6 +11,7 @@ import random
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import utils_runtime
 
 
 # TRAIN_DATA = '/data/small_processed/nn_input_train'
@@ -23,7 +24,7 @@ CKPT_DIR = '/data/ckpt'
 SUMMARY_DIR = '/data/summary'
 
 
-BATCH_SIZE = 32 # should be dynamically passe into Config
+BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
 GPU_CONFIG = tf.ConfigProto()
 GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
@@ -48,7 +49,7 @@ def create_metrics_op(output, labels, vocabulary_size):
 
 def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
     # Get vocabulary components
-    vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
+    vocabulary_keys = vocabulary.keys()
     removed_indicies = []
     for c in characters_remove:
         i = vocabulary_keys.index(c)
@@ -86,23 +87,28 @@ def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], an
 
 
 def run_model(args):
-    input_size = 25
+    input_size = 1 if args.train == "sample" else 25
     initial_size = 7
-    label_size = 25
+    label_size = 1 if args.train == "sample" else 25
+    batch_size = 1 if args.train == "sample" else BATCH_SIZE
+
+    # Getting vocabulary mapping:
+    vocabulary = reader.read_abc_pickle(VOCAB_DATA)
+    vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
+    vocabulary = dict(zip(vocabulary_keys, range(len(vocabulary_keys))))
+    vocabulary_size = len(vocabulary)
+    vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
 
     if args.model == 'seq2seq':
         curModel = Seq2SeqRNN(input_size, label_size, 'rnn')
     elif args.model == 'char':
-        # curModel = CharRNN(input_size, label_size, 'rnn')
-        curModel = CharRNN(input_size, label_size, 'gru')
-        # curModel = CharRNN(input_size, label_size, 'lstm')
+        # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'rnn')
+        curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'gru')
+        # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm')
 
-    # Getting vocabulary mapping:
-    vocabulary = reader.read_abc_pickle(VOCAB_DATA)
-    vocabulary_size = len(vocabulary)
 
     output_op, state_op = curModel.create_model(is_train = args.train)
-    input_placeholder, label_placeholder, initial_placeholder, train_op, loss_op = curModel.train()
+    input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
     prediction_op, accuracy_op, conf_op = create_metrics_op(output_op, label_placeholder, vocabulary_size)
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
@@ -143,7 +149,7 @@ def run_model(args):
             i_stopped = 0
 
         # Train model
-        if args.train:
+        if args.train == "train":
             init_op = tf.global_variables_initializer() # tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
             init_op.run()
 
@@ -157,13 +163,15 @@ def run_model(args):
                     # Get train data - into feed_dict
                     data = reader.read_abc_pickle(train_file)
                     random.shuffle(data)
-                    train_batches = reader.abc_batch(data, n=BATCH_SIZE)
+                    train_batches = reader.abc_batch(data, n=batch_size)
                     for k, train_batch in enumerate(train_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*train_batch)])
 
                         feed_dict = {
                             input_placeholder: input_window_batch,
-                            initial_placeholder: meta_batch,
+                            meta_placeholder: meta_batch,
+                            initial_state_placeholder: [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)],
+                            use_meta_placeholder: True,
                             label_placeholder: output_window_batch
                         }
 
@@ -189,7 +197,7 @@ def run_model(args):
                 plot_confusion(confusion_matrix, vocabulary, i, characters_remove=['|', '2'])
 
         # Test Model
-        else:
+        elif args.train == "test":
             # Exit if no checkpoint to test
             if not found_ckpt:
                 return
@@ -204,13 +212,15 @@ def run_model(args):
                 # Get test data - into feed_dict
                 data = reader.read_abc_pickle(test_file)
                 random.shuffle(data)
-                test_batches = reader.abc_batch(data, n=BATCH_SIZE)
+                test_batches = reader.abc_batch(data, n=batch_size)
                 for k, train_batch in enumerate(train_batches):
                     meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*test_batches)])
 
                     feed_dict = {
                         input_placeholder: input_window_batch,
-                        initial_placeholder: meta_batch,
+                        meta_placeholder: meta_batch,
+                        initial_state_placeholder: [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)],
+                        use_meta_placeholder: True,
                         label_placeholder: output_window_batch
                     }
 
@@ -234,6 +244,54 @@ def run_model(args):
             test_accuracy = np.mean(batch_accuracies)
             print "Model TEST accuracy: {0}".format(test_accuracy)
 
+        # Sample Model
+        else:
+            # Exit if no checkpoint to sample
+            if not found_ckpt:
+                return
+
+            warm_length = 20
+            warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
+            generated = warm_chars[1:]
+
+            print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
+            for j, c in enumerate(warm_chars):
+                initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
+
+                feed_dict = {
+                    input_placeholder: [[c]],
+                    meta_placeholder: [warm_meta],
+                    initial_state_placeholder: initial_state_sample,
+                    use_meta_placeholder: j == 0,
+                    label_placeholder: [[0]]   # TODO: revisit
+                }
+
+                loss, output, state, prediction = session.run([loss_op, output_op, state_op, prediction_op], feed_dict=feed_dict)
+
+            sampled_character = prediction[0, 0]
+            while True:
+                feed_dict = {
+                    input_placeholder: [[sampled_character]],
+                    meta_placeholder: [np.zeros_like(warm_meta)],
+                    initial_state_placeholder: state[0],
+                    use_meta_placeholder: False,
+                    label_placeholder: [[0]]   # TODO: revisit
+                }
+
+                loss, output, state, prediction = session.run([loss_op, output_op, state_op, prediction_op], feed_dict=feed_dict)
+                if prediction == 81 or len(generated) > 100:
+                    break
+                # sample from "output" (probabilities) instead of finding the argmax?
+                sampled_character = np.random.choice(len(output.flatten()), p=output.flatten())
+                generated.append(sampled_character)
+
+            decoded_characters = [vocabulary_decode[char] for char in generated]
+            print ''.join(decoded_characters)
+
+
+
+
+
 
 
 def parseCommandLine():
@@ -245,7 +303,7 @@ def parseCommandLine():
     requiredModel.add_argument('-m', choices = ["seq2seq", "char"], type = str,
     					dest = 'model', required = True, help = 'Type of model to run')
     requiredTrain = parser.add_argument_group('Required Train/Test arguments')
-    requiredTrain.add_argument('-p', choices = ["train", "test"], type = str,
+    requiredTrain.add_argument('-p', choices = ["train", "test", "sample"], type = str,
     					dest = 'train', required = True, help = 'Training or Testing phase to be run')
 
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')

@@ -10,7 +10,7 @@ import logging
 class Config(object):
 
 	def __init__(self):
-		self.batch_size = 32
+		self.batch_size = 100
 		self.lr = 0.001
 
 		self.songtype = 20
@@ -82,11 +82,13 @@ class CBOW(object):
 
 class CharRNN(object):
 
-	def __init__(self, input_size, label_size, cell_type):
+	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type):
 		self.input_size = input_size
 		self.label_size = label_size
 		self.cell_type = cell_type
 		self.config = Config()
+		self.config.batch_size = batch_size
+		self.config.vocab_size = vocab_size
 
 		if cell_type == 'rnn':
 			self.cell = rnn.BasicRNNCell(self.config.hidden_size)
@@ -102,7 +104,9 @@ class CharRNN(object):
 		output_shape = (None,) + tuple([label_size])
 		self.input_placeholder = tf.placeholder(tf.int32, shape=input_shape, name='Input')
 		self.label_placeholder = tf.placeholder(tf.int32, shape=output_shape, name='Output')
-		self.initial_state = tf.placeholder(tf.int32, shape=[None, self.config.num_meta], name='Initial_State')
+		self.meta_placeholder = tf.placeholder(tf.int32, shape=[None, self.config.num_meta], name='Meta')
+		self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
+		self.use_meta_placeholder = tf.placeholder(tf.bool, name='State_Initialization_Bool')
 
 		print "Completed Initializing the Char RNN Model using a {0} cell".format(cell_type.upper())
 
@@ -121,19 +125,23 @@ class CharRNN(object):
 	 	# Embedding lookup for Metadata
 	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.vocab_meta, self.config.meta_embed],
 	 								 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
-	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state[:, :5])
+	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.meta_placeholder[:, :5])
 
 	 	# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
 	 	embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
-		# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.initial_state[:, 5:])], axis=0)
+		# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.meta_placeholder[:, 5:])], axis=0)
 		# print embeddings_meta.get_shape().as_list()
 		# print embeddings.get_shape().as_list()
 		# print self.input_placeholder.get_shape().as_list()
 
+		initial_added = tf.cond(self.use_meta_placeholder,
+	                            lambda: embeddings_meta,
+	                            lambda: self.initial_state_placeholder)
+
 		if self.cell_type == 'lstm':
-			initial_tuple = tuple([rnn.LSTMStateTuple(embeddings_meta, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32)) for idx in xrange(self.config.num_layers)])
+			initial_tuple = tuple([rnn.LSTMStateTuple(initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32)) for idx in xrange(self.config.num_layers)])
 	  	else:
-			initial_tuple = (embeddings_meta, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
+			initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
 	 	rnn_output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
 
 		decode_var = tf.Variable(tf.random_uniform([self.config.hidden_size, self.config.vocab_size],
@@ -163,7 +171,7 @@ class CharRNN(object):
 
 		print("Setup the training mechanism for the Char RNN Model...")
 
-		return self.input_placeholder, self.label_placeholder, self.initial_state, self.train_op, self.loss
+		return self.input_placeholder, self.label_placeholder, self.meta_placeholder, self.initial_state_placeholder, self.use_meta_placeholder, self.train_op, self.loss
 
 
 
