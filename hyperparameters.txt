@@ -1,3 +1,5 @@
+char
+2
 meta_embed, 20, 200, 30
 embedding_dims, 80, 200, 30
 num_layers, 2, 4, 1
