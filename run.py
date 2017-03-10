@@ -107,6 +107,10 @@ def run_model(args):
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm')
         # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm')
 
+    if args.train == 'dev':
+        setHyperparameters(curModel)
+
+
 
     output_op, state_op = curModel.create_model(is_train = args.train)
     input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
@@ -198,9 +202,9 @@ def run_model(args):
                 plot_confusion(confusion_matrix, vocabulary, i, characters_remove=['|', '2'])
 
         # Test Model
-        elif args.train == "test":
+        if args.train == "test" or args.train == 'dev':
             # Exit if no checkpoint to test
-            if not found_ckpt:
+            if not found_ckpt and args.train != 'dev':
                 return
 
             confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
@@ -244,6 +248,12 @@ def run_model(args):
             plot_confusion(confusion_matrix, vocabulary, "_dev-set", characters_remove=['|', '2'])
             test_accuracy = np.mean(batch_accuracies)
             print "Model TEST accuracy: {0}".format(test_accuracy)
+            if args.train == 'dev':
+                # Update the file for choosing best hyperparameters
+                curFile = open(curModel.dev_filename, 'a')
+                curFile.write("Model TEST accuracy: {0}".format(test_accuracy))
+                curFile.write('\n')
+
 
         # Sample Model
         else:
@@ -304,11 +314,12 @@ def parseCommandLine():
     requiredModel.add_argument('-m', choices = ["seq2seq", "char"], type = str,
     					dest = 'model', required = True, help = 'Type of model to run')
     requiredTrain = parser.add_argument_group('Required Train/Test arguments')
-    requiredTrain.add_argument('-p', choices = ["train", "test", "sample"], type = str,
+    requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
     					dest = 'train', required = True, help = 'Training or Testing phase to be run')
 
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
     parser.add_argument('-e', dest='num_epochs', default=50, type=int, help='Set the number of Epochs')
+
     args = parser.parse_args()
     return args
 
