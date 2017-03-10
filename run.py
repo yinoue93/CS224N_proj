@@ -47,23 +47,30 @@ def create_metrics_op(output, labels, vocabulary_size):
 
 
 def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
-    fig, ax = plt.subplots(figsize=(16, 16))
-    res = ax.imshow(confusion_matrix.astype(int), interpolation='nearest', cmap=plt.cm.jet)
-    cb = fig.colorbar(res)
-
     # Get vocabulary components
     vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
-    # vocabulary_values = vocabulary.values()
-    # vocabulary_values += [vocabulary_values[-1]+1, vocabulary_values[-1]+2]
+    removed_indicies = []
     for c in characters_remove:
+        i = vocabulary_keys.index(c)
         vocabulary_keys.remove(c)
+        removed_indicies.append(i)
+
+    # Delete unnecessary rows
+    conf_temp = np.delete(confusion_matrix, removed_indicies, axis=0)
+    # Delete unnecessary cols
+    new_confusion = np.delete(conf_temp, removed_indicies, axis=1)
+
     vocabulary_values = range(len(vocabulary_keys))
     vocabulary_size = len(vocabulary_keys)
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    res = ax.imshow(new_confusion.astype(int), interpolation='nearest', cmap=plt.cm.jet)
+    cb = fig.colorbar(res)
 
     if annotate:
         for x in xrange(vocabulary_size):
             for y in xrange(vocabulary_size):
-                ax.annotate(str(confusion_matrix[x, y]), xy=(y, x),
+                ax.annotate(str(new_confusion[x, y]), xy=(y, x),
                             horizontalalignment='center',
                             verticalalignment='center',
                             fontsize=4)
@@ -71,6 +78,10 @@ def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], an
     plt.xticks(vocabulary_values, vocabulary_keys)
     plt.yticks(vocabulary_values, vocabulary_keys)
     fig.savefig('confusion_matrix_epoch{0}.png'.format(epoch))
+
+
+
+# def run_once(writer, )
 
 
 
@@ -111,16 +122,22 @@ def run_model(args):
     tf.summary.scalar('Loss', loss_op)
     summary_op = tf.summary.merge_all()
     step = 0
+    found_ckpt = False
 
     with tf.Session(config=GPU_CONFIG) as session:
         print "Inititialized TF Session!"
 
         # Checkpoint
+        if args.override:
+            if tf.gfile.Exists(CKPT_DIR):
+                tf.gfile.DeleteRecursively(CKPT_DIR)
+            tf.gfile.MakeDirs(CKPT_DIR)
+
         ckpt = tf.train.get_checkpoint_state(CKPT_DIR)
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(session, ckpt.model_checkpoint_path)
-            # print(ckpt.model_checkpoint_path)
             i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
+            found_ckpt = True
         else:
             print('No checkpoint file found!')
             i_stopped = 0
@@ -173,18 +190,12 @@ def run_model(args):
 
         # Test Model
         else:
-            # Session
-            ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
-            if ckpt and ckpt.model_checkpoint_path:
-                saver.restore(session, ckpt.model_checkpoint_path)
-                print(ckpt.model_checkpoint_path)
-            else:
-                print('No checkpoint file found!')
+            # Exit if no checkpoint to test
+            if not found_ckpt:
                 return
 
             confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
             batch_accuracies = []
-
             test_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
 
             print "Running test set from file {0}".format(DEVELOPMENT_DATA)
@@ -216,6 +227,9 @@ def run_model(args):
                     # print "Output Prediction Probabilities: {0}".format(output_pred)
                     # print "Output State: {0}".format(output_state)
 
+                    # Processed another batch
+                    step += 1
+
             plot_confusion(confusion_matrix, vocabulary, "_dev-set", characters_remove=['|', '2'])
             test_accuracy = np.mean(batch_accuracies)
             print "Model TEST accuracy: {0}".format(test_accuracy)
@@ -223,19 +237,21 @@ def run_model(args):
 
 
 def parseCommandLine():
-	desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)
-	parser = ArgumentParser(description=desc)
+    desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)
+    parser = ArgumentParser(description=desc)
 
-	print("Parsing Command Line Arguments...")
-	requiredModel = parser.add_argument_group('Required Model arguments')
-	requiredModel.add_argument('-m', choices = ["seq2seq", "char"], type = str,
-						dest = 'model', required = True, help = 'Type of model to run')
-	requiredTrain = parser.add_argument_group('Required Train/Test arguments')
-	requiredTrain.add_argument('-p', choices = ["train", "test"], type = str,
-						dest = 'train', required = True, help = 'Training or Testing phase to be run')
+    print("Parsing Command Line Arguments...")
+    requiredModel = parser.add_argument_group('Required Model arguments')
+    requiredModel.add_argument('-m', choices = ["seq2seq", "char"], type = str,
+    					dest = 'model', required = True, help = 'Type of model to run')
+    requiredTrain = parser.add_argument_group('Required Train/Test arguments')
+    requiredTrain.add_argument('-p', choices = ["train", "test"], type = str,
+    					dest = 'train', required = True, help = 'Training or Testing phase to be run')
 
-	args = parser.parse_args()
-	return args
+    parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
+    args = parser.parse_args()
+
+    return args
 
 
 
@@ -250,4 +266,3 @@ def main(_):
 
 if __name__ == "__main__":
     tf.app.run()
-
