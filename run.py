@@ -8,12 +8,16 @@ from models import CharRNN, Config
 import pickle
 import reader
 import random
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
 # TRAIN_DATA = '/data/small_processed/nn_input_train'
 # TEST_DATA = '/data/small_processed/nn_input_test'
 TRAIN_DATA = '/data/the_session_processed/nn_input_train_stride_25_window_25_nnType_char_rnn_shuffled'
 TEST_DATA = '/data/the_session_processed/nn_input_dev_stride_25_window_25_nnType_char_rnn_shuffled'
+VOCAB_DATA = '/data/the_session_processed/vocab_map_music.p'
 
 CKPT_DIR = '/data/ckpt'
 SUMMARY_DIR = '/data/summary'
@@ -25,6 +29,23 @@ GPU_CONFIG = tf.ConfigProto()
 GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
 
 
+
+def create_metrics_op(output, labels, vocabulary_size):
+    prediction = tf.to_int32(tf.argmax(output, axis=2))
+
+    difference = labels - prediction
+    zero = tf.constant(0, dtype=tf.int32)
+    boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
+    accuracy = tf.reduce_mean(boolean_difference)
+    tf.summary.scalar('Accuracy', accuracy)
+
+    confusion_matrix = tf.confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
+    # conf matrix summary? tensorboard image?
+
+    return prediction, accuracy, confusion_matrix
+
+
+
 def run_model(args):
     input_size = 25
     initial_size = 7
@@ -34,12 +55,19 @@ def run_model(args):
         curModel = Seq2SeqRNN(input_size, label_size, 'rnn')
     elif args.model == 'char':
         # curModel = CharRNN(input_size, label_size, 'rnn')
-        # curModel = CharRNN(input_size, label_size, 'gru')
-        curModel = CharRNN(input_size, label_size, 'lstm')
+        curModel = CharRNN(input_size, label_size, 'gru')
+        # curModel = CharRNN(input_size, label_size, 'lstm')
 
+    # Getting vocabulary mapping:
+    vocabulary = reader.read_abc_pickle(VOCAB_DATA)
+    vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
+    vocabulary_values = vocabulary.values()
+    vocabulary_values += [vocabulary_values[-1]+1, vocabulary_values[-1]+2]
+    vocabulary_size = len(vocabulary_keys)
 
-    output, state = curModel.create_model(is_train = args.train)
-    input_placeholder, label_placeholder, initial_placeholder, train_op, loss = curModel.train()
+    output_op, state_op = curModel.create_model(is_train = args.train)
+    input_placeholder, label_placeholder, initial_placeholder, train_op, loss_op = curModel.train()
+    prediction_op, accuracy_op, conf_op = create_metrics_op(output_op, label_placeholder, vocabulary_size)
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
     if args.train:
@@ -59,22 +87,22 @@ def run_model(args):
     # saver = tf.train.Saver(tf.all_variables(), max_to_keep=50)
     saver = tf.train.Saver(max_to_keep=NUM_EPOCHS)
 
-    tf.summary.scalar('Loss', loss)
+    tf.summary.scalar('Loss', loss_op)
     summary_op = tf.summary.merge_all()
     step = 0
 
-    # Checkpoint
-    ckpt = tf.train.get_checkpoint_state(CKPT_DIR)
-    if ckpt and ckpt.model_checkpoint_path:
-        saver.restore(sess, ckpt.model_checkpoint_path)
-        # print(ckpt.model_checkpoint_path)
-        i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
-    else:
-        print('No checkpoint file found!')
-        i_stopped = 0
-
     with tf.Session(config=GPU_CONFIG) as session:
         print "Inititialized TF Session!"
+
+        # Checkpoint
+        ckpt = tf.train.get_checkpoint_state(CKPT_DIR)
+        if ckpt and ckpt.model_checkpoint_path:
+            saver.restore(session, ckpt.model_checkpoint_path)
+            # print(ckpt.model_checkpoint_path)
+            i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
+        else:
+            print('No checkpoint file found!')
+            i_stopped = 0
 
         # Train model
         if args.train:
@@ -84,6 +112,7 @@ def run_model(args):
             train_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
 
             for i in xrange(i_stopped, NUM_EPOCHS):
+                confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
                 print "Running epoch ({0})...".format(i)
                 random.shuffle(train_filenames)
                 for j, train_file in enumerate(train_filenames):
@@ -100,18 +129,13 @@ def run_model(args):
                             label_placeholder: output_window_batch
                         }
 
-                        _, summary, batch_loss, output_pred, output_state = session.run([train_op, summary_op, loss, output, state], feed_dict=feed_dict)
+                        _, summary, loss, output, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, output_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                         train_writer.add_summary(summary, step)
 
-                        prediction = np.argmax(output_pred, axis=2)
-                        difference = output_window_batch - prediction
+                        confusion_matrix += conf
 
-                        correct_per_batch = np.sum(difference == 0, axis=1)
-                        accuracy_per_batch = correct_per_batch / float(difference.shape[1])
-                        accuaracy = np.mean(accuracy_per_batch)
-
-                        print "Average accuracy per batch {0}".format(accuaracy)
-                        print "Batch Loss: {0}".format(batch_loss)
+                        print "Average accuracy per batch {0}".format(accuracy)
+                        print "Batch Loss: {0}".format(loss)
                         # print "Output Predictions: {0}".format(prediction)
                         # print "Input Labels: {0}".format(output_window_batch)
                         # print "Output Prediction Probabilities: {0}".format(output_pred)
@@ -123,6 +147,18 @@ def run_model(args):
                 # Checkpoint model - every epoch
                 checkpoint_path = os.path.join(CKPT_DIR, 'model.ckpt')
                 saver.save(session, checkpoint_path, global_step=i)
+
+                fig, ax = plt.subplots(figsize=(16, 16))
+                res = ax.imshow(confusion_matrix, interpolation='nearest', cmap=plt.cm.jet)
+                cb = fig.colorbar(res)
+                for x in xrange(vocabulary_size):
+                    for y in xrange(vocabulary_size):
+                        ax.annotate(str(confusion_matrix[x, y]), xy=(y, x),
+                                    horizontalalignment='center',
+                                    verticalalignment='center')
+                plt.xticks(vocabulary_values, vocabulary_keys)
+                plt.yticks(vocabulary_values, vocabulary_keys)
+                fig.savefig('confusion_matrix_epoch{0}.png'.format(i))
 
         # Test Model
         else:
@@ -164,3 +200,4 @@ def main(_):
 
 if __name__ == "__main__":
     tf.app.run()
+
