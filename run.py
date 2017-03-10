@@ -20,7 +20,7 @@ TRAIN_DATA = '/data/the_session_processed/nn_input_train_stride_25_window_25_nnT
 DEVELOPMENT_DATA = '/data/the_session_processed/nn_input_dev_stride_25_window_25_nnType_char_rnn_shuffled'
 VOCAB_DATA = '/data/the_session_processed/vocab_map_music.p'
 
-CKPT_DIR = '/data/ckpt'
+CKPT_DIR =  '/data/ckpt'
 SUMMARY_DIR = '/data/summary'
 
 
@@ -91,6 +91,7 @@ def run_model(args):
     initial_size = 7
     label_size = 1 if args.train == "sample" else 25
     batch_size = 1 if args.train == "sample" else BATCH_SIZE
+    NUM_EPOCHS = args.num_epochs
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
@@ -103,7 +104,7 @@ def run_model(args):
         curModel = Seq2SeqRNN(input_size, label_size, 'rnn')
     elif args.model == 'char':
         # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'rnn')
-        curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'gru')
+        curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm')
         # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm')
 
 
@@ -307,8 +308,8 @@ def parseCommandLine():
     					dest = 'train', required = True, help = 'Training or Testing phase to be run')
 
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
+    parser.add_argument('-e', dest='num_epochs', default=50, type=int, help='Set the number of Epochs')
     args = parser.parse_args()
-
     return args
 
 
