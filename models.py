@@ -172,7 +172,7 @@ class CharRNN(object):
 
 		print("Built the Char RNN Model...")
 
-		return self.pred, state
+		return self.pred, self.output, state
 
 
 

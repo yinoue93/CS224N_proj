@@ -13,6 +13,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import utils_runtime
 import utils_hyperparam
+from utils import *
 
 # TRAIN_DATA = '/data/small_processed/nn_input_train'
 # DEVELOPMENT_DATA = '/data/small_processed/nn_input_test'
@@ -24,16 +25,18 @@ VOCAB_DATA = '/data/the_session_processed/vocab_map_music.p'
 CKPT_DIR =  '/data/ckpt'
 SUMMARY_DIR = '/data/summary'
 
-
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
 GPU_CONFIG = tf.ConfigProto()
-GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
+GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
+
+# For T --> inf, p is uniform. Easy to sample from!
+# For T --> 0, p "concentrates" on arg max. Hard to sample from!
+TEMPERATURE = 10.0
 
 
-
-def create_metrics_op(output, labels, vocabulary_size):
-    prediction = tf.to_int32(tf.argmax(output, axis=2))
+def create_metrics_op(probabilities, labels, vocabulary_size):
+    prediction = tf.to_int32(tf.argmax(probabilities, axis=2))
 
     difference = labels - prediction
     zero = tf.constant(0, dtype=tf.int32)
@@ -46,6 +49,13 @@ def create_metrics_op(output, labels, vocabulary_size):
 
     return prediction, accuracy, confusion_matrix
 
+
+def sample_with_temperature(logits, temperature):
+    flattened_logits = logits.flatten()
+    unnormalized = np.exp((flattened_logits - np.max(flattened_logits)) / temperature)
+    probabilities = unnormalized / float(np.sum(unnormalized))
+    sample = np.random.choice(len(probabilities), p=probabilities)
+    return sample
 
 
 def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
@@ -113,9 +123,9 @@ def run_model(args):
     elif args.model == 'char':
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config)
 
-    output_op, state_op = curModel.create_model(is_train = (args.train=='train'))
+    probabilities_op, logits_op, state_op = curModel.create_model(is_train = (args.train=='train'))
     input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
-    prediction_op, accuracy_op, conf_op = create_metrics_op(output_op, label_placeholder, vocabulary_size)
+    prediction_op, accuracy_op, conf_op = create_metrics_op(probabilities_op, label_placeholder, vocabulary_size)
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
     if args.train == 'train':
@@ -149,6 +159,7 @@ def run_model(args):
             tf.gfile.MakeDirs(CKPT_DIR)
 
         ckpt = tf.train.get_checkpoint_state(CKPT_DIR)
+        print CKPT_DIR
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(session, ckpt.model_checkpoint_path)
             i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
@@ -185,7 +196,7 @@ def run_model(args):
                             label_placeholder: output_window_batch
                         }
 
-                        _, summary, loss, output, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, output_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                        _, summary, loss, probabilities, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                         train_writer.add_summary(summary, step)
 
                         confusion_matrix += conf
@@ -194,8 +205,8 @@ def run_model(args):
                         print "Batch Loss: {0}".format(loss)
                         # print "Output Predictions: {0}".format(prediction)
                         # print "Input Labels: {0}".format(output_window_batch)
-                        # print "Output Prediction Probabilities: {0}".format(output_pred)
-                        # print "Output State: {0}".format(output_state)
+                        # print "Output Prediction Probabilities: {0}".format(probabilities)
+                        # print "Output State: {0}".format(state)
 
                         # Processed another batch
                         step += 1
@@ -238,7 +249,7 @@ def run_model(args):
                         label_placeholder: output_window_batch
                     }
 
-                    summary, loss, output, state, prediction, accuracy, conf = session.run([summary_op, loss_op, output_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                    summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                     test_writer.add_summary(summary, step)
 
                     confusion_matrix += conf
@@ -248,8 +259,8 @@ def run_model(args):
                     print "Batch Loss: {0}".format(loss)
                     # print "Output Predictions: {0}".format(prediction)
                     # print "Input Labels: {0}".format(output_window_batch)
-                    # print "Output Prediction Probabilities: {0}".format(output_pred)
-                    # print "Output State: {0}".format(output_state)
+                    # print "Output Prediction Probabilities: {0}".format(probabilities)
+                    # print "Output State: {0}".format(state)
 
                     # Processed another batch
                     step += 1
@@ -275,7 +286,7 @@ def run_model(args):
 
             warm_length = 20
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
-            generated = warm_chars[1:]
+            generated = warm_chars
 
             print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
             for j, c in enumerate(warm_chars):
@@ -297,9 +308,9 @@ def run_model(args):
                     label_placeholder: [[0]]   # TODO: revisit
                 }
 
-                loss, output, state, prediction = session.run([loss_op, output_op, state_op, prediction_op], feed_dict=feed_dict)
+                loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
 
-            sampled_character = prediction[0, 0]
+            sampled_character = sample_with_temperature(logits, TEMPERATURE)
             while True:
                 if cell_type == 'lstm':
                     initial_state_sample = []
@@ -316,15 +327,17 @@ def run_model(args):
                     label_placeholder: [[0]]   # TODO: revisit
                 }
 
-                loss, output, state, prediction = session.run([loss_op, output_op, state_op, prediction_op], feed_dict=feed_dict)
-                if prediction[0, 0] == 81 or len(generated) > 100:
-                    break
-                # sample from "output" (probabilities) instead of finding the argmax?
-                sampled_character = np.random.choice(len(output.flatten()), p=output.flatten())
+                loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
+                sampled_character = sample_with_temperature(logits, TEMPERATURE)
                 generated.append(sampled_character)
+                if sampled_character == 81 or len(generated) > 100:
+                    break
 
             decoded_characters = [vocabulary_decode[char] for char in generated]
+            print len(decoded_characters)
             print ''.join(decoded_characters)
+
+            # encoding = encoding2ABC(warm_meta, generated[1:-1])
 
 
 
@@ -344,7 +357,7 @@ def parseCommandLine():
     requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
     					dest = 'train', required = True, help = 'Training or Testing phase to be run')
 
-    requiredTrain.add_argument('-c', type = str, dest = 'set_config', required = True,
+    requiredTrain.add_argument('-c', type = str, dest = 'set_config',
                                help = 'Set hyperparameters', default='')
 
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
@@ -356,13 +369,14 @@ def parseCommandLine():
 
 
 def main(_):
-    if tf.gfile.Exists(SUMMARY_DIR):
-        tf.gfile.DeleteRecursively(SUMMARY_DIR)
-    tf.gfile.MakeDirs(SUMMARY_DIR)
 
     args = parseCommandLine()
     run_model(args)
 
+    if args.train != "sample":
+        if tf.gfile.Exists(SUMMARY_DIR):
+            tf.gfile.DeleteRecursively(SUMMARY_DIR)
+        tf.gfile.MakeDirs(SUMMARY_DIR)
 
 if __name__ == "__main__":
     tf.app.run()
