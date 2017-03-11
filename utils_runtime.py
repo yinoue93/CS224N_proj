@@ -30,7 +30,7 @@ def genWarmStartDataset(data_len, vocab_dir='/data/the_session_processed',
 		abc_file = os.path.join(checkedFolder, random.choice(abc_list))
 
 		meta,music = loadCleanABC(abc_file)
-		warm_str = music[:data_len]
+		warm_str = music[:data_len-1]
 
 		# start encoding
 		meta_enList = []

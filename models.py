@@ -6,10 +6,12 @@ import sys
 import os
 import logging
 
+import utils_hyperparam
+
 
 class Config(object):
 
-	def __init__(self):
+	def __init__(self, hyperparam_path):
 		self.batch_size = 100
 		self.lr = 0.001
 
@@ -30,11 +32,9 @@ class Config(object):
 		self.vocab_meta = self.songtype + self.sign + self.notesize+ self.flats + self.mode
 		self.num_meta = 7
 		self.num_layers = 2
-		self.num_epochs = 30
 		self.keep_prob = 0.6
 
-		# Only for Skip-Gram model
-		self.skip_window = 2
+		# Only for CBOW model
 		self.embed_size = 32
 
 		# Only for Seq2Seq Attention Models
@@ -42,11 +42,21 @@ class Config(object):
 		self.num_decode = 4
 		self.attention_option = 'luong'
 
+		# Discriminator Parameters
+		self.numFilters = 32
+		self.hidden_units = 100
+		self.num_outputs = 2
+		self.cnn_lr = 0.001
+
+		if len(hyperparam_path)!=0:
+			print "Setting hyperparameters from a file %s" %hyperparam_path
+			utils_hyperparam.setHyperparam(self, hyperparam_path)
+
 
 class CBOW(object):
 
-	def __init__(self, input_size, label_size):
-		self.config = Config()
+	def __init__(self, input_size, label_size, hyperparam_path):
+		self.config = Config(hyperparam_path)
 		self.input_size = input_size
 		self.label_size = label_size
 		self.input_placeholder = tf.placeholder(tf.int32, shape=[None, self.input_size])
@@ -57,9 +67,9 @@ class CBOW(object):
 		print("Completed Initializing the CBOW Model.....")
 
 
-	def build_model(self):
+	def create_model(self):
 		weight = tf.get_variable("Wout", shape=[self.config.embed_size, self.config.vocab_size],
-		   			initializer=tf.contrib.layers.xavier_initializer())
+					initializer=tf.contrib.layers.xavier_initializer())
 		bias = tf.Variable(tf.zeros([self.config.vocab_size]))
 
 		word_vec =  tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
@@ -71,7 +81,7 @@ class CBOW(object):
 		return model_output
 
 	def train(self):
-		self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
+		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
 		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(loss)
 
 		print("Setup the training mechanism for the CBOW model.....")
@@ -82,11 +92,11 @@ class CBOW(object):
 
 class CharRNN(object):
 
-	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type):
+	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type, hyperparam_path):
 		self.input_size = input_size
 		self.label_size = label_size
 		self.cell_type = cell_type
-		self.config = Config()
+		self.config = Config(hyperparam_path)
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
 
@@ -115,23 +125,22 @@ class CharRNN(object):
 
 
 	def create_model(self, is_train=True):
-		 # with tf.variable_scope(self.cell_type):
-	 	if is_train:
-	 		self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=1.0)
-	 	rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
+		if is_train:
+			self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=1.0)
+		rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
 
-	 	# Embedding lookup for ABC format characters
-	 	embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
-	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
-	 	embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
+		# Embedding lookup for ABC format characters
+		embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
+										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
+		embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
 
-	 	# Embedding lookup for Metadata
-	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.vocab_meta, self.config.meta_embed],
-	 								 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
-	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.meta_placeholder[:, :5])
+		# Embedding lookup for Metadata
+		embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.vocab_meta, self.config.meta_embed],
+									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
+		embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.meta_placeholder[:, :5])
 
-	 	# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
-	 	embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
+		# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
+		embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
 		# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.meta_placeholder[:, 5:])], axis=0)
 		# print embeddings_meta.get_shape().as_list()
 		# print embeddings.get_shape().as_list()
@@ -152,18 +161,18 @@ class CharRNN(object):
 		rnn_output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
 
 		decode_var = tf.Variable(tf.random_uniform([self.config.hidden_size, self.config.vocab_size],
-	 									 0, 10, dtype=tf.float32, seed=3), name='char_decode')
+										 0, 10, dtype=tf.float32, seed=3), name='char_decode')
 		decode_bias = tf.Variable(tf.random_uniform([self.config.vocab_size],
-	 									 0, 10, dtype=tf.float32, seed=3), name='char_decode_bias')
+										 0, 10, dtype=tf.float32, seed=3), name='char_decode_bias')
 		decode_list = []
 		for i in xrange(self.input_size):
 			decode_list.append(tf.matmul(rnn_output[:, i, :], decode_var) + decode_bias)
 		self.output = tf.stack(decode_list, axis=1)
 		self.pred = tf.nn.softmax(self.output)
 
-	 	print("Built the Char RNN Model...")
+		print("Built the Char RNN Model...")
 
-	 	return self.pred, state
+		return self.pred, state
 
 
 
@@ -272,8 +281,86 @@ class CharRNN(object):
 
 
 
+# class Discriminator(object):
+
+# 	def __init__(self, inputs, labels, is_training, batch_size,use_lrelu=True, use_batchnorm=False, dropout=None, reuse=True):
+# 		self.input = inputs
+# 		self.labels = labels
+# 		self.batch_size = batch_size
+# 		self.is_training = is_training
+# 		self.reuse = reuse
+# 		self.dropout = dropout
+# 		self.use_batchnorm = use_batchnorm
+# 		self.use_lrelu = use_lrelu
+# 		self.config = Config()
+
+# 	def lrelu(self, x, leak=0.2, name='lrelu'):
+# 		return tf.maximum(x, leak*x)
+
+# 	def conv_layer(self, inputs, filterSz1, strideSz1, scope):
+# 		l1 = tf.nn.conv2d(inputs,filterSz1,strideSz1,padding='SAME')
+# 		if use_batchnorm:
+# 			l1 = tf.contrib.layers.batch_norm(l1, decay=0.9,center=True,scale=True,
+# 						epsilon=1e-8,is_training=is_training, reuse=self.reuse, trainable=True, scope=scope)
+
+# 		if use_lrelu:
+# 			l2 = self.lrelu(l1)
+# 		else:
+# 			l2 = tf.nn.relu(l1)
+
+# 		if self.dropout is not None and self.is_training == True:
+# 			l2 = tf.nn.dropout(l2, self.dropout)
+
+# 		return l2
 
 
+# 	def create_model(self):
+# 		with tf.variable_scope("discriminator") as scope:
+# 			if self.reuse:
+# 				scope.reuse_variables()
+
+
+# 			filterSz1 = [3, self.config.embedding_dims,1, self.config.numFilters1]
+# 			strideSz1 = [1,1,1,1]
+# 			conv_layer1 = self.conv_layer(self.input,filterSz1,strideSz1,padding='SAME', scope)
+
+# 			filterSz2 = [3, 1, self.config.numFilters, self.config.numFilters]
+# 			strideSz2 = [1,1,1,1]
+# 			conv_layer2 = self.conv_layer(conv_layer1,filterSz2,strideSz2,padding='SAME', scope)
+
+# 			win_size = [1,3,1,1]
+# 			strideSz3 = [1,1,1,1]
+# 			conv_layer3 = tf.nn.max_pool(conv_layer2,ksize=win_size,strides=strideSz3, padding='SAME')
+
+# 			layerShape = conv_layer3.get_shape().as_list()
+# 			numParams = reduce(lambda x, y: x*y, layerShape[1:])
+
+# 			layer_flatten = tf.reshape(conv_layer3, [-1, numParams])
+
+# 			layer4 = tf.contrib.layers.fully_connected(layer_flatten, num_outputs=self.config.hidden_units,
+# 						reuse=self.reuse,trainable=True, scope=scope)
+
+# 			if self.dropout is not None and self.is_training == True:
+# 				layer4 = tf.nn.dropout(layer4, self.dropout)
+
+
+# 			layer5 = tf.contrib.layers.fully_connected(layer4, num_outputs=self.config.num_outputs,
+# 						reuse=self.reuse,trainable=True, scope=scope)
+
+# 			self.output = layer5
+# 			self.pred = tf.nn.softmax(layer5)
+
+# 			return self.pred
+
+
+
+# 	def train(self, op='adam'):
+# 		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
+# 						 labels=self.labels))
+
+
+# 		train_op = tf.train.AdamOptimizer(self.config.cnn_lr).minimize(self.loss)
+# 		return train_op
 
 
 
