@@ -242,17 +242,38 @@ def encoding2ABC(metaList, musicList, outputname=None, vocab_dir='/data/the_sess
 	@musicList	- A list of encoded music
 	"""
 
-	oneHotHeaders = ('R', 'M', 'L', 'K_key', 'K_mode')
+	oneHotHeaders = ('R', 'M', 'L')
 
 	meta_map = pickle.load(open(os.path.join(vocab_dir, 'vocab_map_meta.p'), 'r'))
 	music_map = pickle.load(open(os.path.join(vocab_dir, 'vocab_map_music.p'), 'r'))
 
+	meta_reverse = {}
+	for header in meta_map.keys():
+		meta_ori = meta_map[header]
+		meta_reverse[header] = dict(zip(meta_ori.values(), meta_ori.keys()))
+
+	music_reverse = dict(zip(music_map.values(), music_map.keys()))
+
 	abcStr = 'X: 1\n'
 	for i in range(len(oneHotHeaders)):
-		abcStr += '%s: %s\n' %(oneHotHeaders[i], metaList[i])
+		header = oneHotHeaders[i]
+		abcStr += '%s: %s\n' %(header, str(meta_reverse[header][metaList[i]]))
+
+	num_flats = int(meta_reverse['K_key'][metaList[len(oneHotHeaders)]])
+	mode = int(meta_reverse['K_mode'][metaList[len(oneHotHeaders)+1]])
+
+	keys = ['B#','E#','A#','D#','G#','C#','F#','B','E','A','D','G','C',
+			'F','Bb','Eb','Ab','Db','Gb','Cb','Fb']
+	mode_modifier = {MODE_MAJ:12, MODE_MIN:9, MODE_MIX:11, MODE_DOR:10, 
+					 MODE_PHR:8, MODE_LYD:13, MODE_LOC:7}
+	mode_name = {MODE_MAJ:'', MODE_MIN:'m', MODE_MIX:'mix', MODE_DOR:'dor', 
+				 MODE_PHR:'phr', MODE_LYD:'lyd', MODE_LOC:'loc'}
+
+	abcStr += 'K: %s%s\n' %(keys[mode_modifier[mode]+num_flats], mode_name[mode])
 
 	for music_ch in musicList:
-		abcStr += music_map[music_ch]
+		if music_ch<len(music_reverse):
+			abcStr += music_reverse[music_ch]
 
 	print 'Generated .abc file is: \n%s' %abcStr
 
@@ -269,3 +290,6 @@ def encoding2ABC(metaList, musicList, outputname=None, vocab_dir='/data/the_sess
 		os.system(cmd)
 
 	return abcStr
+
+if __name__ == "__main__":
+	encoding2ABC([1,0,0,2,5,0,0], [0,1,1,1,2,3,4,80])
