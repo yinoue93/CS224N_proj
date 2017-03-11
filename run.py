@@ -108,6 +108,7 @@ def run_model(args):
         # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm')
 
     if args.train == 'dev':
+        print "Running in development mode"
         setHyperparameters(curModel)
 
 
@@ -251,8 +252,9 @@ def run_model(args):
             if args.train == 'dev':
                 # Update the file for choosing best hyperparameters
                 curFile = open(curModel.dev_filename, 'a')
-                curFile.write("Model TEST accuracy: {0}".format(test_accuracy))
+                curFile.write("Model development accuracy: {0}".format(test_accuracy))
                 curFile.write('\n')
+                curFile.close()
 
 
         # Sample Model
