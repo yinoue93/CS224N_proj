@@ -11,7 +11,7 @@ import utils_hyperparam
 
 class Config(object):
 
-	def __init__(self, set_hyperparam):
+	def __init__(self, hyperparam_path):
 		self.batch_size = 100
 		self.lr = 0.001
 
@@ -48,15 +48,15 @@ class Config(object):
 		self.num_outputs = 2
 		self.cnn_lr = 0.001
 
-		if set_hyperparam:
-			print "Running in development mode"
-			utils_hyperparam.setHyperparam(self)
+		if len(hyperparam_path)!=0:
+			print "Setting hyperparameters from a file %s" %hyperparam_path
+			utils_hyperparam.setHyperparam(self, hyperparam_path)
 
 
 class CBOW(object):
 
-	def __init__(self, input_size, label_size):
-		self.config = Config()
+	def __init__(self, input_size, label_size, hyperparam_path):
+		self.config = Config(hyperparam_path)
 		self.input_size = input_size
 		self.label_size = label_size
 		self.input_placeholder = tf.placeholder(tf.int32, shape=[None, self.input_size])
@@ -92,11 +92,11 @@ class CBOW(object):
 
 class CharRNN(object):
 
-	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type, set_hyperparam):
+	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type, hyperparam_path):
 		self.input_size = input_size
 		self.label_size = label_size
 		self.cell_type = cell_type
-		self.config = Config(set_hyperparam)
+		self.config = Config(hyperparam_path)
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
 

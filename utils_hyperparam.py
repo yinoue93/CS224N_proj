@@ -78,11 +78,11 @@ def runHyperparam(paramTxtF):
 		print '='*80
 
 		# train the model using the new hyperparameters
-		cmd = 'python run.py -p dev_train -o -ckpt %s -m %s -e %d' %(DEV_CKPT_DIR, modelType, num_epochs)
+		cmd = 'python run.py -p train -o -ckpt %s -m %s -e %d -c %s' %(DEV_CKPT_DIR, modelType, num_epochs, TMP_HYPER_PICKLE)
 		os.system(cmd)
 
 		# test the model on the dev set
-		cmd = 'python run.py -p dev_test -ckpt %s -m %s' %(DEV_CKPT_DIR, modelType)
+		cmd = 'python run.py -p dev -ckpt %s -m %s -c %s' %(DEV_CKPT_DIR, modelType, TMP_HYPER_PICKLE)
 		os.system(cmd)
 
 	os.remove(TMP_HYPER_PICKLE)
@@ -94,13 +94,13 @@ def runHyperparam(paramTxtF):
 	os.rename(OUTPUT_FILE, resultName)
 
 
-def setHyperparam(config):
+def setHyperparam(config, hyperparam_path):
 	"""
 	To be called by a Config class.
 	Reads TMP_HYPER_PICKLE, and sets the parameters of the @model accordingly.
 	"""
 
-	paramDict = pickle.load(open(TMP_HYPER_PICKLE, 'rb'))
+	paramDict = pickle.load(open(hyperparam_path, 'rb'))
 
 	for key,val in paramDict.iteritems():
 		if type(getattr(config, key)) == int:
