@@ -28,8 +28,10 @@ def parseHyperTxt(paramTxtF):
 			name,start,end,step = [s.strip() for s in line.split(',')]
 
 			params = list(np.arange(float(start),float(end),float(step)))
+			params = [round(a,5) for a in params]
 			# python list is not inclusive
-			params.append(float(end))
+			if params[-1]!=float(end):
+				params.append(float(end))
 
 			nameList.append(name)
 			paramList.append(params)
@@ -50,6 +52,8 @@ def runHyperparam(paramTxtF):
 
 	# create all combinations of params
 	param_all_combos = list(itertools.product(*paramList))
+
+	print '[INFO] There are %d combinations of hyperparameters...' %len(param_all_combos)
 
 	for param in param_all_combos:
 		# create the param list and pickle it to TMP_HYPER_PICKLE
