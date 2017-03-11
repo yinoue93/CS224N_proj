@@ -6,10 +6,12 @@ import sys
 import os
 import logging
 
+import utils_hyperparam
+
 
 class Config(object):
 
-	def __init__(self):
+	def __init__(self, set_hyperparam):
 		self.batch_size = 100
 		self.lr = 0.001
 
@@ -46,6 +48,10 @@ class Config(object):
 		self.num_outputs = 2
 		self.cnn_lr = 0.001
 
+		if set_hyperparam:
+			print "Running in development mode"
+			utils_hyperparam.setHyperparam(self)
+
 
 class CBOW(object):
 
@@ -63,7 +69,7 @@ class CBOW(object):
 
 	def create_model(self):
 		weight = tf.get_variable("Wout", shape=[self.config.embed_size, self.config.vocab_size],
-		   			initializer=tf.contrib.layers.xavier_initializer())
+					initializer=tf.contrib.layers.xavier_initializer())
 		bias = tf.Variable(tf.zeros([self.config.vocab_size]))
 
 		word_vec =  tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
@@ -86,11 +92,11 @@ class CBOW(object):
 
 class CharRNN(object):
 
-	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type):
+	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type, set_hyperparam):
 		self.input_size = input_size
 		self.label_size = label_size
 		self.cell_type = cell_type
-		self.config = Config()
+		self.config = Config(set_hyperparam)
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
 
@@ -116,50 +122,50 @@ class CharRNN(object):
 
 
 	def create_model(self, is_train=True):
-	 	if is_train:
-	 		self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=1.0)
-	 	rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
+		if is_train:
+			self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=1.0)
+		rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
 
-	 	# Embedding lookup for ABC format characters
-	 	embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
-	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
-	 	embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
+		# Embedding lookup for ABC format characters
+		embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
+										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
+		embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
 
-	 	# Embedding lookup for Metadata
-	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.vocab_meta, self.config.meta_embed],
-	 								 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
-	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.meta_placeholder[:, :5])
+		# Embedding lookup for Metadata
+		embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.vocab_meta, self.config.meta_embed],
+									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
+		embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.meta_placeholder[:, :5])
 
-	 	# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
-	 	embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
+		# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
+		embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
 		# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.meta_placeholder[:, 5:])], axis=0)
 		# print embeddings_meta.get_shape().as_list()
 		# print embeddings.get_shape().as_list()
 		# print self.input_placeholder.get_shape().as_list()
 
 		initial_added = tf.cond(self.use_meta_placeholder,
-	                            lambda: embeddings_meta,
-	                            lambda: self.initial_state_placeholder)
+								lambda: embeddings_meta,
+								lambda: self.initial_state_placeholder)
 
 		if self.cell_type == 'lstm':
 			initial_tuple = tuple([rnn.LSTMStateTuple(initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32)) for idx in xrange(self.config.num_layers)])
-	  	else:
+		else:
 			initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
-	 	rnn_output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
+		rnn_output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
 
 		decode_var = tf.Variable(tf.random_uniform([self.config.hidden_size, self.config.vocab_size],
-	 									 0, 10, dtype=tf.float32, seed=3), name='char_decode')
+										 0, 10, dtype=tf.float32, seed=3), name='char_decode')
 		decode_bias = tf.Variable(tf.random_uniform([self.config.vocab_size],
-	 									 0, 10, dtype=tf.float32, seed=3), name='char_decode_bias')
+										 0, 10, dtype=tf.float32, seed=3), name='char_decode_bias')
 		decode_list = []
 		for i in xrange(self.input_size):
 			decode_list.append(tf.matmul(rnn_output[:, i, :], decode_var) + decode_bias)
 		self.output = tf.stack(decode_list, axis=1)
 		self.pred = tf.nn.softmax(self.output)
 
-	 	print("Built the Char RNN Model...")
+		print("Built the Char RNN Model...")
 
-	 	return self.pred, state
+		return self.pred, state
 
 
 
