@@ -233,3 +233,39 @@ def passesABC2ABC(fromFile):
 			errorCnt -= 1
 
 	return errorCnt==0
+
+def encoding2ABC(metaList, musicList, outputname=None, vocab_dir='/data/the_session_processed'):
+	"""
+	Converts lists encoding of .abc song into .abc string
+
+	@metaList 	- A list of encoded metadata
+	@musicList	- A list of encoded music
+	"""
+
+	oneHotHeaders = ('R', 'M', 'L', 'K_key', 'K_mode')
+
+	meta_map = pickle.load(open(os.path.join(vocab_dir, 'vocab_map_meta.p'), 'r'))
+	music_map = pickle.load(open(os.path.join(vocab_dir, 'vocab_map_music.p'), 'r'))
+
+	abcStr = 'X: 1\n'
+	for i in range(len(oneHotHeaders)):
+		abcStr += '%s: %s\n' %(oneHotHeaders[i], metaList[i])
+
+	for music_ch in musicList:
+		abcStr += music_map[music_ch]
+
+	print 'Generated .abc file is: \n%s' %abcStr
+
+	if outputname is not None:
+		# am I being ran on a Windows machine ('nt'), or a linux machine('posix')?
+		if os.name=='posix':
+			exe_cmd = 'abc2midi'
+		elif os.name=='nt':
+			exe_cmd = 'abcmidi_win32\\abc2midi.exe'
+
+		cmd = '%s "%s" -t %d -o %s' %(exe_cmd, outputname)
+		print toFile
+
+		os.system(cmd)
+
+	return abcStr

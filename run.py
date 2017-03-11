@@ -12,11 +12,12 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import utils_runtime
-
+import utils_hyperparam
 
 # TRAIN_DATA = '/data/small_processed/nn_input_train'
 # DEVELOPMENT_DATA = '/data/small_processed/nn_input_test'
 TRAIN_DATA = '/data/the_session_processed/nn_input_train_stride_25_window_25_nnType_char_rnn_shuffled'
+TEST_DATA = '/data/the_session_processed/nn_input_test_stride_25_window_25_nnType_char_rnn_shuffled'
 DEVELOPMENT_DATA = '/data/the_session_processed/nn_input_dev_stride_25_window_25_nnType_char_rnn_shuffled'
 VOCAB_DATA = '/data/the_session_processed/vocab_map_music.p'
 
@@ -92,6 +93,8 @@ def run_model(args):
     label_size = 1 if args.train == "sample" else 25
     batch_size = 1 if args.train == "sample" else BATCH_SIZE
     NUM_EPOCHS = args.num_epochs
+    CKPT_DIR = args.ckpt_dir
+    print CKPT_DIR
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
@@ -101,23 +104,25 @@ def run_model(args):
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
 
     if args.model == 'seq2seq':
-        curModel = Seq2SeqRNN(input_size, label_size, 'rnn')
+        curModel = Seq2SeqRNN(input_size, label_size, 'rnn', args.set_config)
     elif args.model == 'char':
-        # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'rnn')
-        curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm')
-        # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm')
+        # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'rnn', args.set_config)
+        curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'gru', args.set_config)
+        # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm', args.set_config)
 
-
-    output_op, state_op = curModel.create_model(is_train = args.train)
+    output_op, state_op = curModel.create_model(is_train = (args.train=='train'))
     input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
     prediction_op, accuracy_op, conf_op = create_metrics_op(output_op, label_placeholder, vocabulary_size)
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
-    if args.train:
+    if args.train == 'train':
         print "Reading in training filenames."
         train_filenames = reader.abc_filenames(TRAIN_DATA)
-    else:
+    elif args.train == 'test':
         print "Reading in testing filenames."
+        test_filenames = reader.abc_filenames(TEST_DATA)
+    elif args.train == 'dev':
+        print "Reading in development filenames."
         test_filenames = reader.abc_filenames(DEVELOPMENT_DATA)
 
 
@@ -198,7 +203,7 @@ def run_model(args):
                 plot_confusion(confusion_matrix, vocabulary, i, characters_remove=['|', '2'])
 
         # Test Model
-        elif args.train == "test":
+        if args.train == "test" or args.train == 'dev':
             # Exit if no checkpoint to test
             if not found_ckpt:
                 return
@@ -207,15 +212,19 @@ def run_model(args):
             batch_accuracies = []
             test_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
 
-            print "Running test set from file {0}".format(DEVELOPMENT_DATA)
+            if args.train == "test":
+                print "Running test set from file {0}".format(TEST_DATA)
+            elif args.train == "dev":
+                print "Running dev set from file {0}".format(DEVELOPMENT_DATA)
+
             random.shuffle(test_filenames)
             for j, test_file in enumerate(test_filenames):
                 # Get test data - into feed_dict
                 data = reader.read_abc_pickle(test_file)
                 random.shuffle(data)
                 test_batches = reader.abc_batch(data, n=batch_size)
-                for k, train_batch in enumerate(train_batches):
-                    meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*test_batches)])
+                for k, test_batch in enumerate(test_batches):
+                    meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*test_batch)])
 
                     feed_dict = {
                         input_placeholder: input_window_batch,
@@ -226,7 +235,7 @@ def run_model(args):
                     }
 
                     summary, loss, output, state, prediction, accuracy, conf = session.run([summary_op, loss_op, output_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                    train_writer.add_summary(summary, step)
+                    test_writer.add_summary(summary, step)
 
                     confusion_matrix += conf
                     batch_accuracies.append(accuracy)
@@ -241,9 +250,18 @@ def run_model(args):
                     # Processed another batch
                     step += 1
 
-            plot_confusion(confusion_matrix, vocabulary, "_dev-set", characters_remove=['|', '2'])
             test_accuracy = np.mean(batch_accuracies)
             print "Model TEST accuracy: {0}".format(test_accuracy)
+
+            plot_confusion(confusion_matrix, vocabulary, "_dev-set", characters_remove=['|', '2'])
+            
+            if args.train == 'dev':
+                # Update the file for choosing best hyperparameters
+                curFile = open(curModel.config.dev_filename, 'a')
+                curFile.write("Dev set accuracy: {0}".format(test_accuracy))
+                curFile.write('\n')
+                curFile.close()
+
 
         # Sample Model
         else:
@@ -304,11 +322,15 @@ def parseCommandLine():
     requiredModel.add_argument('-m', choices = ["seq2seq", "char"], type = str,
     					dest = 'model', required = True, help = 'Type of model to run')
     requiredTrain = parser.add_argument_group('Required Train/Test arguments')
-    requiredTrain.add_argument('-p', choices = ["train", "test", "sample"], type = str,
+    requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
     					dest = 'train', required = True, help = 'Training or Testing phase to be run')
+
+    requiredTrain.add_argument('-c', type = str, dest = 'set_config', required = True, 
+                               help = 'Set hyperparameters', default='')
 
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
     parser.add_argument('-e', dest='num_epochs', default=50, type=int, help='Set the number of Epochs')
+    parser.add_argument('-ckpt', dest='ckpt_dir', default='/data/temp_ckpt/', type=str, help='Set the checkpoint directory')
     args = parser.parse_args()
     return args
 

@@ -48,11 +48,13 @@ The song portion of the numpy array is **82** dimensions (i.e. **80** music char
 ```
 >>> pickle.load(open('vocab_map_meta.p'))
 {'R': {'jig': 0, 'waltz': 1, 'three-two': 2, 'songair': 3, 'slowair': 4, 'strathspey': 5, 
-	'polka': 6, 'air': 7, 'barndance': 8, 'slide': 9, 'slipjig': 10, 'hornpipe': 11, 'mazurka': 12, 'reel': 13, 'highlandfling': 14, 'quickstep': 15}, 
+	'polka': 6, 'air': 7, 'barndance': 8, 'slide': 9, 'slipjig': 10, 'hornpipe': 11, 
+	'mazurka': 12, 'reel': 13, 'highlandfling': 14, 'quickstep': 15}, 
 'M': {'7/8': 1, '11/8': 2, '5/4': 0, '6/8': 3, '5/8': 4, '4/4': 5, '6/4': 6, '13/8': 7, 
 	'3/2': 8, '3/4': 9, '9/8': 10, '12/8': 11, '2/2': 12, '9/4': 13, '2/4': 14}, 
 'L': {'1/4': 0, '1/16': 1, '1/8': 2}, 
-'K_key': {'-5': 0, '-4': 1, '1': 2, '0': 3, '3': 4, '-6': 5, '-1': 6, '4': 7, '-3': 8, '-2': 9, '2': 10, '5': 11}, 
+'K_key': {'-5': 0, '-4': 1, '1': 2, '0': 3, '3': 4, '-6': 5, '-1': 6, '4': 7, '-3': 8, 
+	'-2': 9, '2': 10, '5': 11}, 
 'K_mode': {'1': 0, '0': 1, '3': 2, '2': 3, '5': 4, '4': 5}}
 ```
 
