@@ -2,6 +2,9 @@ import itertools
 import pickle
 import os
 import datetime
+import re
+
+from argparse import ArgumentParser
 
 import numpy as np
 
@@ -28,8 +31,10 @@ def parseHyperTxt(paramTxtF):
 			name,start,end,step = [s.strip() for s in line.split(',')]
 
 			params = list(np.arange(float(start),float(end),float(step)))
+			params = [round(a,5) for a in params]
 			# python list is not inclusive
-			params.append(float(end))
+			if params[-1]!=float(end):
+				params.append(float(end))
 
 			nameList.append(name)
 			paramList.append(params)
@@ -50,6 +55,8 @@ def runHyperparam(paramTxtF):
 
 	# create all combinations of params
 	param_all_combos = list(itertools.product(*paramList))
+
+	print '[INFO] There are %d combinations of hyperparameters...' %len(param_all_combos)
 
 	for param in param_all_combos:
 		# create the param list and pickle it to TMP_HYPER_PICKLE
@@ -110,7 +117,48 @@ def setHyperparam(config, hyperparam_path):
 
 	setattr(config, 'dev_filename', OUTPUT_FILE)
 
+def resultParser(resultFname, top_N=3):
+	"""
+	Usage: python utils_hyperparam.py -m results -f grid_search_result_tmp.txt
+	"""
+	
+	top_N_acc = np.array([0]*top_N, dtype=np.float32)
+	top_N_str = ['']*top_N
+	prev_str = ''
+	with open(resultFname, 'r') as f:
+		for line in f:
+			line = line.replace('\n', '')
+			if 'Dev set accuracy' in line:
+				accuracy = float(re.search('0.[0-9]+', line).group(0))
+
+				if accuracy>top_N_acc[0]:
+					top_N_acc[0] = accuracy
+					top_N_str[0] = prev_str
+
+					indx = np.argsort(top_N_acc)
+					top_N_acc = top_N_acc[indx]
+					top_N_str = [top_N_str[ind] for ind in list(indx)]
+			else:
+				prev_str = line
+
+	print np.flipud(top_N_acc)
+	print '\n'.join(list(reversed(top_N_str)))
 
 if __name__ == "__main__":
-	hyperparamTxt = 'hyperparameters.txt'
-	runHyperparam(hyperparamTxt)
+	desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)
+	parser = ArgumentParser(description=desc)
+
+	parser.add_argument('-m', choices = ['results','tune'], type = str,
+						dest = 'mode', required = True, help = 'Specify which mode to run')
+	parser.add_argument('-f', type = str, default='', 
+						dest = 'filename', help = 'Filename to read results from')
+	parser.add_argument('-n', type = int, default=3,
+						dest = 'top_N', help = 'Top N accuracies')
+
+	args = parser.parse_args()
+
+	if args.mode == 'tune':
+		hyperparamTxt = 'hyperparameters.txt'
+		runHyperparam(hyperparamTxt)
+	elif args.mode == 'results':
+		resultParser(args.filename, args.top_N)
