@@ -98,17 +98,20 @@ def run_model(args):
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
+    print vocabulary
     vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
     vocabulary = dict(zip(vocabulary_keys, range(len(vocabulary_keys))))
+    print vocabulary
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
+    cell_type = 'lstm'
+    # cell_type = 'gru'
+    # cell_type = 'rnn'
 
     if args.model == 'seq2seq':
-        curModel = Seq2SeqRNN(input_size, label_size, 'rnn', args.set_config)
+        curModel = Seq2SeqRNN(input_size, label_size, cell_type, args.set_config)
     elif args.model == 'char':
-        # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'rnn', args.set_config)
-        curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'gru', args.set_config)
-        # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm', args.set_config)
+        curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config)
 
     output_op, state_op = curModel.create_model(is_train = (args.train=='train'))
     input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
@@ -149,6 +152,7 @@ def run_model(args):
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(session, ckpt.model_checkpoint_path)
             i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
+            print "Found checkpoint for epoch ({0})".format(i_stopped)
             found_ckpt = True
         else:
             print('No checkpoint file found!')
@@ -176,7 +180,7 @@ def run_model(args):
                         feed_dict = {
                             input_placeholder: input_window_batch,
                             meta_placeholder: meta_batch,
-                            initial_state_placeholder: [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)],
+                            initial_state_placeholder: [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)],
                             use_meta_placeholder: True,
                             label_placeholder: output_window_batch
                         }
@@ -200,7 +204,7 @@ def run_model(args):
                 checkpoint_path = os.path.join(CKPT_DIR, 'model.ckpt')
                 saver.save(session, checkpoint_path, global_step=i)
 
-                plot_confusion(confusion_matrix, vocabulary, i, characters_remove=['|', '2'])
+                plot_confusion(confusion_matrix, vocabulary, i)#, characters_remove=['|', '2'])
 
         # Test Model
         if args.train == "test" or args.train == 'dev':
@@ -229,7 +233,7 @@ def run_model(args):
                     feed_dict = {
                         input_placeholder: input_window_batch,
                         meta_placeholder: meta_batch,
-                        initial_state_placeholder: [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)],
+                        initial_state_placeholder: [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)],
                         use_meta_placeholder: True,
                         label_placeholder: output_window_batch
                     }
@@ -254,7 +258,7 @@ def run_model(args):
             print "Model TEST accuracy: {0}".format(test_accuracy)
 
             plot_confusion(confusion_matrix, vocabulary, "_dev-set", characters_remove=['|', '2'])
-            
+
             if args.train == 'dev':
                 # Update the file for choosing best hyperparameters
                 curFile = open(curModel.config.dev_filename, 'a')
@@ -275,7 +279,15 @@ def run_model(args):
 
             print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
             for j, c in enumerate(warm_chars):
-                initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
+                if cell_type == 'lstm':
+                    if j == 0:
+                        initial_state_sample = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
+                    else:
+                        initial_state_sample = []
+                        for lstm_tuple in state:
+                            initial_state_sample.append(lstm_tuple[0])
+                else:
+                    initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
 
                 feed_dict = {
                     input_placeholder: [[c]],
@@ -289,16 +301,23 @@ def run_model(args):
 
             sampled_character = prediction[0, 0]
             while True:
+                if cell_type == 'lstm':
+                    initial_state_sample = []
+                    for lstm_tuple in state:
+                        initial_state_sample.append(lstm_tuple[0])
+                else:
+                    initial_state_sample = state[0]
+
                 feed_dict = {
                     input_placeholder: [[sampled_character]],
                     meta_placeholder: [np.zeros_like(warm_meta)],
-                    initial_state_placeholder: state[0],
+                    initial_state_placeholder: initial_state_sample,
                     use_meta_placeholder: False,
                     label_placeholder: [[0]]   # TODO: revisit
                 }
 
                 loss, output, state, prediction = session.run([loss_op, output_op, state_op, prediction_op], feed_dict=feed_dict)
-                if prediction == 81 or len(generated) > 100:
+                if prediction[0, 0] == 81 or len(generated) > 100:
                     break
                 # sample from "output" (probabilities) instead of finding the argmax?
                 sampled_character = np.random.choice(len(output.flatten()), p=output.flatten())
@@ -325,7 +344,7 @@ def parseCommandLine():
     requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
     					dest = 'train', required = True, help = 'Training or Testing phase to be run')
 
-    requiredTrain.add_argument('-c', type = str, dest = 'set_config', required = True, 
+    requiredTrain.add_argument('-c', type = str, dest = 'set_config', required = True,
                                help = 'Set hyperparameters', default='')
 
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')

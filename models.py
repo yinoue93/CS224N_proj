@@ -15,7 +15,7 @@ class Config(object):
 		self.batch_size = 100
 		self.lr = 0.001
 
-		self.songtype = 20
+		self.songtype = 20#20
 		self.sign = 16
 		self.notesize = 3
 		self.flats = 11
@@ -26,7 +26,7 @@ class Config(object):
 
 		self.vocab_size = 124
 		# self.meta_embed = self.songtype
-		self.meta_embed = 100 #self.songtype
+		self.meta_embed = 100 #self.songtype/2
 		self.hidden_size = self.meta_embed*5 #+ 2
 		self.embedding_dims = self.vocab_size*3/4
 		self.vocab_meta = self.songtype + self.sign + self.notesize+ self.flats + self.mode
@@ -100,23 +100,26 @@ class CharRNN(object):
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
 
-		if cell_type == 'rnn':
-			self.cell = rnn.BasicRNNCell(self.config.hidden_size)
-		elif cell_type == 'gru':
-			self.cell = rnn.GRUCell(self.config.hidden_size)
-		elif cell_type == 'lstm':
-			self.cell = rnn.BasicLSTMCell(self.config.hidden_size)
-
 		# self.initial_state = self.cell.zero_state(self.config.batch_size, dtype=tf.int32)
 		# input_shape = (None,) + tuple([self.config.max_length,input_size])
 		input_shape = (None,) + tuple([input_size])
 		# output_shape = (None,) + tuple([self.config.max_length,label_size])
 		output_shape = (None,) + tuple([label_size])
+
 		self.input_placeholder = tf.placeholder(tf.int32, shape=input_shape, name='Input')
 		self.label_placeholder = tf.placeholder(tf.int32, shape=output_shape, name='Output')
 		self.meta_placeholder = tf.placeholder(tf.int32, shape=[None, self.config.num_meta], name='Meta')
-		self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		self.use_meta_placeholder = tf.placeholder(tf.bool, name='State_Initialization_Bool')
+
+		if cell_type == 'rnn':
+			self.cell = rnn.BasicRNNCell(self.config.hidden_size)
+			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
+		elif cell_type == 'gru':
+			self.cell = rnn.GRUCell(self.config.hidden_size)
+			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
+		elif cell_type == 'lstm':
+			self.cell = rnn.BasicLSTMCell(self.config.hidden_size)
+			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[self.config.num_layers, None, self.config.hidden_size], name="Initial_State")
 
 		print "Completed Initializing the Char RNN Model using a {0} cell".format(cell_type.upper())
 
@@ -143,14 +146,18 @@ class CharRNN(object):
 		# print embeddings.get_shape().as_list()
 		# print self.input_placeholder.get_shape().as_list()
 
-		initial_added = tf.cond(self.use_meta_placeholder,
-								lambda: embeddings_meta,
-								lambda: self.initial_state_placeholder)
-
 		if self.cell_type == 'lstm':
-			initial_tuple = tuple([rnn.LSTMStateTuple(initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32)) for idx in xrange(self.config.num_layers)])
-		else:
+			initial_added = tf.cond(self.use_meta_placeholder,
+		                            lambda: [embeddings_meta for layer in xrange(self.config.num_layers)],
+		                            lambda: tf.unstack(self.initial_state_placeholder, axis=0)) # [self.initial_state_placeholder[layer] for layer in xrange(self.config.num_layers)])
+			[initial_added[idx].set_shape([self.config.batch_size, self.config.hidden_size]) for idx in xrange(self.config.num_layers)]
+			initial_tuple = tuple([rnn.LSTMStateTuple(initial_added[idx], np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32)) for idx in xrange(self.config.num_layers)])
+	  	else:
+			initial_added = tf.cond(self.use_meta_placeholder,
+		                            lambda: embeddings_meta,
+		                            lambda: self.initial_state_placeholder)
 			initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
+
 		rnn_output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
 
 		decode_var = tf.Variable(tf.random_uniform([self.config.hidden_size, self.config.vocab_size],
@@ -344,7 +351,7 @@ class CharRNN(object):
 # 			self.pred = tf.nn.softmax(layer5)
 
 # 			return self.pred
-			
+
 
 
 # 	def train(self, op='adam'):
