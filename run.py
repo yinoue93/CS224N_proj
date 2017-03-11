@@ -92,6 +92,8 @@ def run_model(args):
     label_size = 1 if args.train == "sample" else 25
     batch_size = 1 if args.train == "sample" else BATCH_SIZE
     NUM_EPOCHS = args.num_epochs
+    CKPT_DIR = args.ckpt_dir
+    print CKPT_DIR
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
@@ -321,7 +323,7 @@ def parseCommandLine():
 
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
     parser.add_argument('-e', dest='num_epochs', default=50, type=int, help='Set the number of Epochs')
-
+    parser.add_argument('-ckpt', dest='ckpt_dir', default='/data/temp_ckpt/', type=str, help='Set the checkpoint directory')
     args = parser.parse_args()
     return args
 
