@@ -109,6 +109,9 @@ def run_model(args):
         # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'rnn', args.set_config)
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'gru', args.set_config)
         # curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, 'lstm', args.set_config)
+    elif args.model == 'gan':
+        curModel = GenAdversarialNet(fake_input_size, real_input_size, label_size, is_training, 
+            batch_size, vocab_size, cell_type, hyperparam_path)
 
     output_op, state_op = curModel.create_model(is_train = (args.train=='train'))
     input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
@@ -319,7 +322,7 @@ def parseCommandLine():
 
     print("Parsing Command Line Arguments...")
     requiredModel = parser.add_argument_group('Required Model arguments')
-    requiredModel.add_argument('-m', choices = ["seq2seq", "char"], type = str,
+    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "gan"], type = str,
     					dest = 'model', required = True, help = 'Type of model to run')
     requiredTrain = parser.add_argument_group('Required Train/Test arguments')
     requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
