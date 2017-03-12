@@ -163,7 +163,8 @@ def run_model(args):
         curModel = CBOW(input_size, label_size, batch_size, vocab_size, args.set_config)
         probabilities_op, logits_op = curModel.create_model()
         input_placeholder, label_placeholder, train_op, loss_op = curModel.train()
-
+    elif args.model == 'gan':
+        curModel = GenAdversarialNet(fake_input_size, real_input_size, label_size, is_training, batch_size, vocab_size, cell_type, hyperparam_path)
 
     prediction_op, accuracy_op, conf_op = create_metrics_op(probabilities_op, label_placeholder, vocabulary_size)
 
@@ -350,7 +351,7 @@ def parseCommandLine():
 
     print("Parsing Command Line Arguments...")
     requiredModel = parser.add_argument_group('Required Model arguments')
-    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "cbow"], type = str,
+    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "cbow", "gan"], type = str,
     					dest = 'model', required = True, help = 'Type of model to run')
     requiredTrain = parser.add_argument_group('Required Train/Test arguments')
     requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
