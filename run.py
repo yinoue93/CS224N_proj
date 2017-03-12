@@ -316,8 +316,9 @@ def run_model(args):
                                                     initial_state_batch, True)
 
                         if args.train == "train":
-                            _ = session.run([train_op])
-                        summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                            _, summary, loss, probabilities, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                        else:
+                            summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                         file_writer.add_summary(summary, step)
 
                         # Update confusion matrix
