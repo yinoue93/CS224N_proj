@@ -15,6 +15,8 @@ import utils_runtime
 import utils_hyperparam
 import utils
 
+
+
 # TRAIN_DATA = '/data/small_processed/nn_input_train'
 # DEVELOPMENT_DATA = '/data/small_processed/nn_input_test'
 TRAIN_DATA = '/data/the_session_processed/nn_input_train_stride_25_window_25_nnType_char_rnn_shuffled'
@@ -22,7 +24,6 @@ TEST_DATA = '/data/the_session_processed/nn_input_test_stride_25_window_25_nnTyp
 DEVELOPMENT_DATA = '/data/the_session_processed/nn_input_dev_stride_25_window_25_nnType_char_rnn_shuffled'
 VOCAB_DATA = '/data/the_session_processed/vocab_map_music.p'
 
-CKPT_DIR =  '/data/ckpt'
 SUMMARY_DIR = '/data/summary'
 
 BATCH_SIZE = 100 # should be dynamically passed into Config
@@ -35,6 +36,7 @@ GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
 TEMPERATURE = 1.0
 
 
+
 def create_metrics_op(probabilities, labels, vocabulary_size):
     prediction = tf.to_int32(tf.argmax(probabilities, axis=2))
 
@@ -45,9 +47,9 @@ def create_metrics_op(probabilities, labels, vocabulary_size):
     tf.summary.scalar('Accuracy', accuracy)
 
     confusion_matrix = tf.confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
-    # conf matrix summary? tensorboard image?
 
     return prediction, accuracy, confusion_matrix
+
 
 
 def sample_with_temperature(logits, temperature):
@@ -56,6 +58,7 @@ def sample_with_temperature(logits, temperature):
     probabilities = unnormalized / float(np.sum(unnormalized))
     sample = np.random.choice(len(probabilities), p=probabilities)
     return sample
+
 
 
 def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
@@ -98,11 +101,11 @@ def get_checkpoint(args, session, saver):
     found_ckpt = False
 
     if args.override:
-        if tf.gfile.Exists(CKPT_DIR):
-            tf.gfile.DeleteRecursively(CKPT_DIR)
-        tf.gfile.MakeDirs(CKPT_DIR)
+        if tf.gfile.Exists(args.ckpt_dir):
+            tf.gfile.DeleteRecursively(args.ckpt_dir)
+        tf.gfile.MakeDirs(args.ckpt_dir)
 
-    ckpt = tf.train.get_checkpoint_state(CKPT_DIR)
+    ckpt = tf.train.get_checkpoint_state(args.ckpt_dir)
     if ckpt and ckpt.model_checkpoint_path:
         saver.restore(session, ckpt.model_checkpoint_path)
         i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
@@ -117,7 +120,7 @@ def get_checkpoint(args, session, saver):
 
 
 def save_checkpoint(session, saver, i):
-    checkpoint_path = os.path.join(CKPT_DIR, 'model.ckpt')
+    checkpoint_path = os.path.join(args.ckpt_dir, 'model.ckpt')
     saver.save(session, checkpoint_path, global_step=i)
 
 
@@ -131,21 +134,55 @@ def print_model_outputs(accuracy, loss, prediction, output_window_batch, probabi
 
 
 
+def create_feed_dict(args, curModel, input_batch, label_batch, meta_batch,
+                            initial_state_batch, use_meta_batch): # add more for GAN
+    if args.model == 'seq2seq':
+        feed_dict = {
+            curModel.input_placeholder: input_batch,
+            curModel.meta_placeholder: meta_batch,
+            curModel.label_placeholder: label_batch,
+            curModel.initial_state_placeholder: initial_state_batch,
+            curModel.use_meta_placeholder: use_meta_batch
+            # attention
+        }
+    elif args.model == 'char':
+        feed_dict = {
+            curModel.input_placeholder: input_batch,
+            curModel.meta_placeholder: meta_batch,
+            curModel.label_placeholder: label_batch,
+            curModel.initial_state_placeholder: initial_state_batch,
+            curModel.use_meta_placeholder: use_meta_batch
+        }
+    elif args.model == 'cbow':
+        feed_dict = {
+            curModel.input_placeholder: input_batch,
+            curModel.label_placeholder: label_batch
+        }
+    elif args.model == 'gan':
+        feed_dict = {
+            curModel.input_placeholder: input_batch,
+            curModel.meta_placeholder: meta_batch,
+            curModel.label_placeholder: label_batch,
+            curModel.initial_state_placeholder: initial_state_batch,
+            curModel.use_meta_placeholder: use_meta_batch
+            # MORE
+        }
+    return feed_dict
+
+
+
 def run_model(args):
     input_size = 1 if args.train == "sample" else 25
     initial_size = 7
     label_size = 1 if args.train == "sample" else 25
     batch_size = 1 if args.train == "sample" else BATCH_SIZE
     NUM_EPOCHS = args.num_epochs
-    CKPT_DIR = args.ckpt_dir
-    print "Using checkpoint directory: {0}".format(CKPT_DIR)
+    print "Using checkpoint directory: {0}".format(args.ckpt_dir)
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
-    print vocabulary
     vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
     vocabulary = dict(zip(vocabulary_keys, range(len(vocabulary_keys))))
-    print vocabulary
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
 
@@ -233,14 +270,8 @@ def run_model(args):
                     else:
                         initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
 
-                    feed_dict = {
-                        input_placeholder: [[c]],
-                        meta_placeholder: [meta], # Parhaps only input meta when (j == 0)
-                        initial_state_placeholder: initial_state_sample,
-                        use_meta_placeholder: j == 0,
-                        label_placeholder: [[0]]
-                    }
-
+                    feed_dict = create_feed_dict(args, curModel, [[c]], [[0]], [meta],
+                                                initial_state_sample, (j == 0))
                     loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
 
                 # Sample
@@ -253,13 +284,9 @@ def run_model(args):
                     else:
                         initial_state_sample = state[0]
 
-                    feed_dict = {
-                        input_placeholder: [[sampled_character]],
-                        meta_placeholder: [np.zeros_like(meta)],
-                        initial_state_placeholder: initial_state_sample,
-                        use_meta_placeholder: False,
-                        label_placeholder: [[0]]
-                    }
+                    feed_dict = create_feed_dict(args, curModel, [[sampled_character]],
+                                                [[0]], [np.zeros_like(meta)],
+                                                initial_state_sample, False)
 
                     loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
                     sampled_character = sample_with_temperature(logits, TEMPERATURE)
@@ -282,14 +309,11 @@ def run_model(args):
                     data_batches = reader.abc_batch(data, n=batch_size)
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
+                        initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
 
-                        feed_dict = {
-                            input_placeholder: input_window_batch,
-                            meta_placeholder: meta_batch,
-                            initial_state_placeholder: [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)],
-                            use_meta_placeholder: True,
-                            label_placeholder: output_window_batch
-                        }
+                        feed_dict = create_feed_dict(args, curModel, input_window_batch,
+                                                    output_window_batch, meta_batch,
+                                                    initial_state_batch, True)
 
                         if args.train == "train":
                             _ = session.run([train_op])
