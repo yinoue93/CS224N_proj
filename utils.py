@@ -156,6 +156,22 @@ def keySigDecomposer(line):
 
 	return str(key),str(mode)
 
+def keySigComposer(num_flats, mode):
+	"""
+	Reverses keySigDecomposer
+	"""
+	num_flats = int(num_flats)
+	mode = int(mode)
+
+	keys = ['B#','E#','A#','D#','G#','C#','F#','B','E','A','D','G','C',
+			'F','Bb','Eb','Ab','Db','Gb','Cb','Fb']
+	mode_modifier = {MODE_MAJ:12, MODE_MIN:9, MODE_MIX:11, MODE_DOR:10, 
+					 MODE_PHR:8, MODE_LYD:13, MODE_LOC:7}
+	mode_name = {MODE_MAJ:'', MODE_MIN:'m', MODE_MIX:'mix', MODE_DOR:'dor', 
+				 MODE_PHR:'phr', MODE_LYD:'lyd', MODE_LOC:'loc'}
+
+	return 'K:%s%s\n' %(keys[mode_modifier[mode]+num_flats], mode_name[mode])
+
 def loadCleanABC(abcname):
 	"""
 	Loads a file in .abc format (cleaned), and returns the meta data and music contained
@@ -164,9 +180,11 @@ def loadCleanABC(abcname):
 	@meta - dictionary of metadata, key is the metadata type (ex. 'K')
 	@music - string of the music
 	"""
+	headerTup = ('X', 'T', 'R', 'M', 'L', 'K', 'Q')
+
 	meta = {}
 	music = ''
-	counter = 7
+	counter = len(headerTup)
 	with open(abcname,'r') as abcfile:
 		for line in abcfile:
 			# break down the key signature into # of sharps and flats
@@ -198,6 +216,24 @@ def loadCleanABC(abcname):
 	meta['complexity'] = (sum(countList[c] for c in notes)*100)/(meta['len']*timeSigNumerator)
 
 	return meta,music
+
+def writeCleanABC(meta, music, outfile=''):
+	headerTup = ('X', 'T', 'R', 'M', 'L', 'K', 'Q')
+
+	abcStr = ''
+	for header in headerTup:
+		if header=='K':
+			abcStr += keySigComposer(meta['K_key'], meta['K_mode'])
+		else:
+			abcStr += '%s:%s\n' %(header, meta[header])
+
+	abcStr += music + '\n'
+
+	if len(outfile)!=0:
+		with open(outfile,'w') as f:
+			f.write(abcStr)
+
+	return abcStr
 
 import subprocess
 def passesABC2ABC(fromFile):
@@ -244,8 +280,8 @@ def encoding2ABC(metaList, musicList, outputname=None, vocab_dir='/data/the_sess
 
 	oneHotHeaders = ('R', 'M', 'L')
 
-	meta_map = pickle.load(open(os.path.join(vocab_dir, 'vocab_map_meta.p'), 'r'))
-	music_map = pickle.load(open(os.path.join(vocab_dir, 'vocab_map_music.p'), 'r'))
+	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
+	music_map = pickle.load(open('/data/global_map_music.p','rb'))
 
 	meta_reverse = {}
 	for header in meta_map.keys():
@@ -262,14 +298,7 @@ def encoding2ABC(metaList, musicList, outputname=None, vocab_dir='/data/the_sess
 	num_flats = int(meta_reverse['K_key'][metaList[len(oneHotHeaders)]])
 	mode = int(meta_reverse['K_mode'][metaList[len(oneHotHeaders)+1]])
 
-	keys = ['B#','E#','A#','D#','G#','C#','F#','B','E','A','D','G','C',
-			'F','Bb','Eb','Ab','Db','Gb','Cb','Fb']
-	mode_modifier = {MODE_MAJ:12, MODE_MIN:9, MODE_MIX:11, MODE_DOR:10, 
-					 MODE_PHR:8, MODE_LYD:13, MODE_LOC:7}
-	mode_name = {MODE_MAJ:'', MODE_MIN:'m', MODE_MIX:'mix', MODE_DOR:'dor', 
-				 MODE_PHR:'phr', MODE_LYD:'lyd', MODE_LOC:'loc'}
-
-	abcStr += 'K: %s%s\n' %(keys[mode_modifier[mode]+num_flats], mode_name[mode])
+	abcStr += keySigComposer(num_flats, mode)
 
 	for music_ch in musicList:
 		if music_ch<len(music_reverse):
@@ -291,5 +320,79 @@ def encoding2ABC(metaList, musicList, outputname=None, vocab_dir='/data/the_sess
 
 	return abcStr
 
+def convertR(folderName, rName):
+	"""
+	Need to convert: china, france, march
+	"""
+	outfolder = folderName + '_R_fixed'
+	makedir(outfolder)
+
+	for fname in os.listdir(folderName):
+		try:
+			meta,music = loadCleanABC(os.path.join(folderName, fname))
+			meta['R'] = rName
+			writeCleanABC(meta, music, os.path.join(outfolder, fname))
+		except:
+			pass
+
+def mvSongGenre(folderName, outputFolder, rName):
+	"""
+	Need to move: jig, waltz, polka, hornpipe, reel
+	"""
+	for fname in os.listdir(folderName):
+		meta,music = loadCleanABC(os.path.join(folderName, fname))
+
+		if meta['R']==rName:
+			writeCleanABC(meta, music, os.path.join(outputFolder, fname))
+
+
+def mergeDictionaries(dict1, dict2):
+	"""
+	To merge music and meta dictionaries:
+
+	dict1 = pickle.load(open('/data/the_session_processed/vocab_map_music.p','rb'))
+	dict2 = pickle.load(open('/data/gan_dataset/vocab_map_music.p','rb'))
+	pickle.dump(mergeDictionaries(dict1, dict2), open('/data/global_map_music.p','wb'))
+
+	dict1 = pickle.load(open('/data/the_session_processed/vocab_map_meta.p','rb'))
+	dict2 = pickle.load(open('/data/gan_dataset/vocab_map_meta.p','rb'))
+
+	dictN = {}
+	for header in dict1.keys():
+		dictN[header] = mergeDictionaries(dict1[header], dict2[header])
+
+	pickle.dump(dictN, open('/data/global_map_meta.p','wb'))
+
+	"""
+	keys = set(dict1.keys()+dict2.keys())
+	newDict = {}
+	for i,k in enumerate(keys):
+		newDict[k] = i
+
+	return newDict
+
+def randomABCGeneration():
+	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
+	music_map = pickle.load(open('/data/global_map_music.p','rb'))
+
+	metaList = []
+	musicList = []
+
+	oneHotHeaders = ('R', 'M', 'L', 'K_key', 'K_mode')
+	for header in oneHotHeaders:
+		metaList.append(random.choice(range(len(meta_map[header]))))
+
+	c = 0
+	while c!=len(music_map):
+		c = random.choice(range(len(music_map)+1))
+		musicList.append(c)
+
+	return encoding2ABC(metaList, musicList)
+
 if __name__ == "__main__":
-	encoding2ABC([1,0,0,2,5,0,0], [0,1,1,1,2,3,4,80])
+	# convertR('/data/france_processed/checked', 'france')
+	# for rname in ['jig', 'waltz', 'polka', 'hornpipe', 'reel']:
+	# 	print rname
+	# 	mvSongGenre('/data/the_session_processed/checked', '/data/gan_dataset', rname)
+
+	pass

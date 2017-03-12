@@ -11,8 +11,9 @@ from posixpath import basename
 
 import threading
 
-max_thread = 10
+max_thread = 4
 sema = threading.Semaphore(max_thread)
+lock = threading.Lock()
 
 def html_downloader(url, next_htmls, folderName):
 	try:
@@ -177,6 +178,96 @@ def scrapeTheMontreal(folderName):
 	for th in thread_list:
 		th.join()
 
+def abcNotation_downloader(url, outputname):
+	try:
+		for i in range(10):
+			try:
+				response = urllib2.urlopen(url, timeout=5)
+				break
+			except:
+				pass
+
+		soup = BeautifulSoup(response.read(), "html.parser")
+
+		abcTxt = soup.find('textarea')
+		if abcTxt!=None:
+			with open(outputname, 'wb') as abcf:
+				abcf.write(re.sub(r'[^\x00-\x7f]',r'',abcTxt.getText()))
+
+	except:
+		print url
+		pass
+
+	sema.release()
+
+def abcNotation_urls(url, song_urls, song_names):
+	for i in range(10):
+		try:
+			response = urllib2.urlopen(url, timeout=5)
+			break
+		except:
+			pass
+
+	soup = BeautifulSoup(response.read(), "html.parser")
+
+	tmp_song_names = []
+	tmp_song_urls = []
+	link = soup.find('pre')
+	for song_obj in link.findAll('a', href=True):
+		song_name = re.sub(r'[^\x00-\x7f]',r'',song_obj.getText())
+		song_name = song_name.replace('.','').replace(',','').replace(' ','_')+'.abc'
+		tmp_song_names.append(song_name)
+
+		tmp_song_urls.append(urljoin(url, song_obj['href']))
+
+	lock.acquire()
+	for song_name in tmp_song_names:
+		count = 0
+		while song_name.replace('.abc','_%d.abc'%count) in song_names:
+			count += 1
+
+		song_names.append(song_name.replace('.abc','_%d.abc'%count))
+	
+	song_urls += tmp_song_urls
+
+	lock.release()
+	sema.release()
+
+
+def scrapeTheABCNotation(folderName):
+	# first find the urls of all songs
+	base_url = 'http://abcnotation.com/searchTunes?q=%s&f=t&o=a&s=' %folderName
+
+	song_urls = []
+	song_names = []
+	thread_list = []
+	for i in range(189):
+		sema.acquire(True)
+		url = base_url+str(10*i)
+		th = threading.Thread(target=abcNotation_urls, 
+							  args=(url, song_urls, song_names))
+
+		thread_list.append(th)
+		th.start()
+
+	# wait for the threads to finish
+	for th in thread_list:
+		th.join()
+
+	thread_list = []
+	for song_url,song_name in zip(song_urls,song_names):
+		sema.acquire(True)
+		th = threading.Thread(target=abcNotation_downloader, 
+							  args=(song_url, os.path.join(folderName, song_name)))
+
+		thread_list.append(th)
+		th.start()
+
+	# wait for the threads to finish
+	for th in thread_list:
+		th.join()
+	
+
 def scrapeLocally(url, folderName):
 	"""
 	Scrapes .abc files stored locally under @url.
@@ -201,7 +292,6 @@ def scrapeLocally(url, folderName):
 						f.close()
 					else:
 						f.write(line+'\n')
-
 
 def parseCLI():
 	desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)
@@ -237,6 +327,8 @@ if __name__ == "__main__":
 		scrapeTheSession(args.folderName)
 	elif 'montreal' in args.url:
 		scrapeTheMontreal(args.folderName)
+	elif 'abcnotation' in args.url:
+		scrapeTheABCNotation(args.folderName)
 	elif ('http' not in args.url) and ('www' not in args.url):
 		scrapeLocally(args.url, args.folderName)
 	else:

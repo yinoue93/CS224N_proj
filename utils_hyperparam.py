@@ -120,16 +120,20 @@ def setHyperparam(config, hyperparam_path):
 def resultParser(resultFname, top_N=3):
 	"""
 	Usage: python utils_hyperparam.py -m results -f grid_search_result_tmp.txt
+
 	"""
 	
 	top_N_acc = np.array([0]*top_N, dtype=np.float32)
 	top_N_str = ['']*top_N
 	prev_str = ''
+	config_map = None
+	accuracy_list = []
 	with open(resultFname, 'r') as f:
 		for line in f:
 			line = line.replace('\n', '')
 			if 'Dev set accuracy' in line:
 				accuracy = float(re.search('0.[0-9]+', line).group(0))
+				accuracy_list.append(accuracy)
 
 				if accuracy>top_N_acc[0]:
 					top_N_acc[0] = accuracy
@@ -141,8 +145,37 @@ def resultParser(resultFname, top_N=3):
 			else:
 				prev_str = line
 
+				tokenList = re.findall('[a-zA-Z_]+: [0-9]+\.*[0-9]*', line)
+				configList = [re.match('[a-zA-Z_]+', token).group(0) for token in tokenList]
+				valList = [float(re.findall('[0-9]+\.*[0-9]*', token)[0]) 
+													for token in tokenList]
+
+				if config_map==None:
+					config_map = []
+					for configStr in configList:
+						config_map.append([])
+
+				for i,val in enumerate(valList):
+					config_map[i].append(val)
+
+
+	print '-'*25 + 'Config. with top accuracy:' + '-'*25
 	print np.flipud(top_N_acc)
 	print '\n'.join(list(reversed(top_N_str)))
+	print '-'*50
+
+	print '='*25 + '"Flattened" Accuracies:' + '='*25
+	accuracy_list = np.asarray(accuracy_list)
+	for config_idx,configStr in enumerate(configList):
+		print '*'*50
+		print configStr
+
+		config_list = np.asarray(config_map[config_idx])
+		for level in sorted(list(set(config_list))):
+			indices = (config_list==level)
+			print '%0.3f:%0.5f' %(level,np.mean(accuracy_list[indices]))
+
+	print '='*50
 
 if __name__ == "__main__":
 	desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)

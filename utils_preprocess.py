@@ -39,7 +39,7 @@ def formatABCtxtWorker(dataPack):
 	header = True
 	headerDict = {}
 	headerTup = ('T', 'R', 'M', 'L', 'K', 'Q')
-	headerDefault = {'T':'none', 'R':'none', 'M':'none', 'L':'none', 'K':'C', 'Q':'100'}
+	headerDefault = {'T':'none', 'R':'none', 'M':'4/4', 'L':'1/8', 'K':'C', 'Q':'1/4=100'}
 	print filename
 	with open(filename,'r') as infile:
 		fileStr = infile.read().replace(' ','').replace('\r','\n')
@@ -67,7 +67,11 @@ def formatABCtxtWorker(dataPack):
 								outfile.write('%s:%s\n' %(head,headerDefault[head]))
 
 					elif headerStr.group()[0] in headerTup:
-						headerDict[headerStr.group()[0]] = line
+						headerChr = headerStr.group()[0]
+						if 'none' == line[line.find(':')+1:].lower():
+							headerDict[headerChr] = '%s:%s\n' %(headerChr, headerDefault[headerChr])
+						else:
+							headerDict[headerChr] = line
 
 				if not header:
 					headerStr = re.match('[a-zA-Z]:',line)
@@ -262,8 +266,8 @@ def encodeABCWorker(dataPack):
 def encodeABC(outputFolder):
 	folderName = os.path.join(outputFolder, CHECK_DIR)
 
-	meta_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_meta.p'),'rb'))
-	music_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_music.p'),'rb'))
+	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
+	music_map = pickle.load(open('/data/global_map_music.p','rb'))
 
 	outputFolder_test = os.path.join(outputFolder, ENCODE_TEST_DIR)
 	makedir(outputFolder_test)
@@ -311,7 +315,7 @@ def npy2nnInputWorkerWorker(dataPack):
 			output_start = start_indx+1
 			output_end = start_indx+window_sz+1
 		elif nnType=='seq2seq':
-			output_start = start_indx+window_sz+1
+			output_start = start_indx+window_sz
 			output_end = output_start + output_sz
 		elif nnType=='BOW':
 			output_start = start_indx+window_sz+1
@@ -335,8 +339,8 @@ def npy2nnInputWorkerWorker(dataPack):
 		output_start = start_indx+1
 		output_end = start_indx+window_sz+1 if nnType=='char_rnn' else output_start+1 
 	elif nnType=='seq2seq':
-		start_indx = len(music)-window_sz-output_sz-1
-		output_start = start_indx+window_sz+1
+		start_indx = len(music)-window_sz-output_sz
+		output_start = start_indx+window_sz
 		output_end = output_start+output_sz
 
 	tupList.append((meta, music[start_indx:start_indx+window_sz], music[output_start:output_end]))
@@ -364,14 +368,21 @@ def npy2nnInput(outputFolder, stride_sz, window_sz, nnType, output_sz=0, num_buc
 	@num_buckets	- int / number of files to generate
 	"""
 
+	if output_sz==0 and nnType=='seq2seq':
+		print '[ERROR] npy2nnInput(): make sure to set the @output_sz for "seq2seq"'
+		exit(0)
+
 	dir_list = [(NN_INPUT_TEST_DIR, ENCODE_TEST_DIR), 
 				(NN_INPUT_TRAIN_DIR, ENCODE_TRAIN_DIR), 
 				(NN_INPUT_DEV_DIR, ENCODE_DEV_DIR)]
 
 	for outDir,inDir in dir_list:
 		inputList = []
-		nnFolder = os.path.join(outputFolder, 
-								outDir+'_stride_%d_window_%d_nnType_%s'%(stride_sz,window_sz,nnType))
+		outfName = outDir+'_stride_%d_window_%d_nnType_%s'%(stride_sz,window_sz,nnType)
+		if nnType=='seq2seq':
+			outfName += '_output_sz_%d' % output_sz
+
+		nnFolder = os.path.join(outputFolder, outfName)
 		makedir(nnFolder)
 
 		encodedDir = os.path.join(outputFolder, inDir)
@@ -417,22 +428,26 @@ def shuffleDataset(originalDir):
 if __name__ == "__main__":
 	# preprocessing pipeline
 	#-----------------------------------
-	originalDataDir = '/data/montreal_plus_local'
-	processedDir = originalDataDir+'_processed'
+	originalDataDir = '/data/the_session'
+	# processedDir = originalDataDir
+	processedDir = originalDataDir+'_processed_global_vocab'
+
 	print '-'*20 + 'FORMATTING' + '-'*20
 	formatABCtxt(originalDataDir, processedDir)
 	print '-'*20 + 'CHECKING' + '-'*20
 	checkABCtxt(processedDir)
 	print '-'*20 + 'SPLITTING' + '-'*20
 	datasetSplit(processedDir, (0.8,0.1,0.1))
-	print '-'*20 + 'GENERATING VOCAB' + '-'*20
-	generateVocab(processedDir)
+	# print '-'*20 + 'GENERATING VOCAB' + '-'*20
+	# generateVocab(processedDir)
 	print '-'*20 + 'ENCODING' + '-'*20
 	encodeABC(processedDir)
-	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-	npy2nnInput(processedDir, 25, 25, 'char_rnn')
+	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	# npy2nnInput(processedDir, 50, 100, 'seq2seq', output_sz=100)
 	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
 	npy2nnInput(processedDir, 50, 100, 'char_rnn')
+	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	npy2nnInput(processedDir, 25, 25, 'char_rnn')
 	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
 	npy2nnInput(processedDir, 4, 20, 'char_rnn')
 	#-----------------------------------
