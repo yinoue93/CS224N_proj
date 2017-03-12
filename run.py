@@ -32,7 +32,7 @@ GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
 
 # For T --> inf, p is uniform. Easy to sample from!
 # For T --> 0, p "concentrates" on arg max. Hard to sample from!
-TEMPERATURE = 10.0
+TEMPERATURE = 1.0
 
 
 def create_metrics_op(probabilities, labels, vocabulary_size):
@@ -286,58 +286,61 @@ def run_model(args):
 
             warm_length = 20
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
-            generated = warm_chars
+
+            warm_meta_array = [warm_meta[:] for idx in xrange(3)]
+            warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
+            warm_meta_array[1][3] = np.random.choice(11)
 
             print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
-            for j, c in enumerate(warm_chars):
-                if cell_type == 'lstm':
-                    if j == 0:
-                        initial_state_sample = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
+            for meta in warm_meta_array:
+                print "Current Metadata: {0}".format(meta)
+                generated = warm_chars[:]
+                for j, c in enumerate(warm_chars):
+                    if cell_type == 'lstm':
+                        if j == 0:
+                            initial_state_sample = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
+                        else:
+                            initial_state_sample = []
+                            for lstm_tuple in state:
+                                initial_state_sample.append(lstm_tuple[0])
                     else:
+                        initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
+
+                    feed_dict = {
+                        input_placeholder: [[c]],
+                        meta_placeholder: [meta],
+                        initial_state_placeholder: initial_state_sample,
+                        use_meta_placeholder: j == 0,
+                        label_placeholder: [[0]]   # TODO: revisit
+                    }
+
+                    loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
+
+                sampled_character = sample_with_temperature(logits, TEMPERATURE)
+                while sampled_character != 81 and len(generated) < 100:
+                    if cell_type == 'lstm':
                         initial_state_sample = []
                         for lstm_tuple in state:
                             initial_state_sample.append(lstm_tuple[0])
-                else:
-                    initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
+                    else:
+                        initial_state_sample = state[0]
 
-                feed_dict = {
-                    input_placeholder: [[c]],
-                    meta_placeholder: [warm_meta],
-                    initial_state_placeholder: initial_state_sample,
-                    use_meta_placeholder: j == 0,
-                    label_placeholder: [[0]]   # TODO: revisit
-                }
+                    feed_dict = {
+                        input_placeholder: [[sampled_character]],
+                        meta_placeholder: [np.zeros_like(meta)],
+                        initial_state_placeholder: initial_state_sample,
+                        use_meta_placeholder: False,
+                        label_placeholder: [[0]]   # TODO: revisit
+                    }
 
-                loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
+                    loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
+                    sampled_character = sample_with_temperature(logits, TEMPERATURE)
+                    generated.append(sampled_character)
 
-            sampled_character = sample_with_temperature(logits, TEMPERATURE)
-            while True:
-                if cell_type == 'lstm':
-                    initial_state_sample = []
-                    for lstm_tuple in state:
-                        initial_state_sample.append(lstm_tuple[0])
-                else:
-                    initial_state_sample = state[0]
+                decoded_characters = [vocabulary_decode[char] for char in generated]
 
-                feed_dict = {
-                    input_placeholder: [[sampled_character]],
-                    meta_placeholder: [np.zeros_like(warm_meta)],
-                    initial_state_placeholder: initial_state_sample,
-                    use_meta_placeholder: False,
-                    label_placeholder: [[0]]   # TODO: revisit
-                }
-
-                loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
-                sampled_character = sample_with_temperature(logits, TEMPERATURE)
-                generated.append(sampled_character)
-                if sampled_character == 81 or len(generated) > 100:
-                    break
-
-            decoded_characters = [vocabulary_decode[char] for char in generated]
-            print len(decoded_characters)
-            print ''.join(decoded_characters)
-
-            # encoding = encoding2ABC(warm_meta, generated[1:-1])
+                # Currently chopping off the last char regardless
+                encoding = encoding2ABC(meta, generated[1:-1])
 
 
 
