@@ -343,12 +343,12 @@ def run_model(args):
                     print "Model {0} accuracy: {1}".format(args.train, test_accuracy)
                     confusion_suffix = "_{0}-set".format(args.train)
 
-                    # if args.train == 'dev':
-                    #     # Update the file for choosing best hyperparameters
-                    #     curFile = open(curModel.config.dev_filename, 'a')
-                    #     curFile.write("Dev set accuracy: {0}".format(test_accuracy))
-                    #     curFile.write('\n')
-                    #     curFile.close()
+                    if args.train == 'dev':
+                        # Update the file for choosing best hyperparameters
+                        curFile = open(curModel.config.dev_filename, 'a')
+                        curFile.write("Dev set accuracy: {0}".format(test_accuracy))
+                        curFile.write('\n')
+                        curFile.close()
 
                 # Plot Confusion Matrix
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix)#, characters_remove=['|', '2'])
