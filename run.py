@@ -13,6 +13,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import utils_runtime
 import utils_hyperparam
+import utils
+
+
 
 # TRAIN_DATA = '/data/small_processed/nn_input_train'
 # DEVELOPMENT_DATA = '/data/small_processed/nn_input_test'
@@ -21,19 +24,21 @@ TEST_DATA = '/data/the_session_processed/nn_input_test_stride_25_window_25_nnTyp
 DEVELOPMENT_DATA = '/data/the_session_processed/nn_input_dev_stride_25_window_25_nnType_char_rnn_shuffled'
 VOCAB_DATA = '/data/the_session_processed/vocab_map_music.p'
 
-CKPT_DIR =  '/data/ckpt'
 SUMMARY_DIR = '/data/summary'
-
 
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
 GPU_CONFIG = tf.ConfigProto()
-GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
+GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
+
+# For T --> inf, p is uniform. Easy to sample from!
+# For T --> 0, p "concentrates" on arg max. Hard to sample from!
+TEMPERATURE = 1.0
 
 
 
-def create_metrics_op(output, labels, vocabulary_size):
-    prediction = tf.to_int32(tf.argmax(output, axis=2))
+def create_metrics_op(probabilities, labels, vocabulary_size):
+    prediction = tf.to_int32(tf.argmax(probabilities, axis=2))
 
     difference = labels - prediction
     zero = tf.constant(0, dtype=tf.int32)
@@ -42,9 +47,17 @@ def create_metrics_op(output, labels, vocabulary_size):
     tf.summary.scalar('Accuracy', accuracy)
 
     confusion_matrix = tf.confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
-    # conf matrix summary? tensorboard image?
 
     return prediction, accuracy, confusion_matrix
+
+
+
+def sample_with_temperature(logits, temperature):
+    flattened_logits = logits.flatten()
+    unnormalized = np.exp((flattened_logits - np.max(flattened_logits)) / temperature)
+    probabilities = unnormalized / float(np.sum(unnormalized))
+    sample = np.random.choice(len(probabilities), p=probabilities)
+    return sample
 
 
 
@@ -83,7 +96,78 @@ def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], an
 
 
 
-# def run_once(writer, )
+def get_checkpoint(args, session, saver):
+    # Checkpoint
+    found_ckpt = False
+
+    if args.override:
+        if tf.gfile.Exists(args.ckpt_dir):
+            tf.gfile.DeleteRecursively(args.ckpt_dir)
+        tf.gfile.MakeDirs(args.ckpt_dir)
+
+    ckpt = tf.train.get_checkpoint_state(args.ckpt_dir)
+    if ckpt and ckpt.model_checkpoint_path:
+        saver.restore(session, ckpt.model_checkpoint_path)
+        i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
+        print "Found checkpoint for epoch ({0})".format(i_stopped)
+        found_ckpt = True
+    else:
+        print('No checkpoint file found!')
+        i_stopped = 0
+
+    return i_stopped, found_ckpt
+
+
+
+def save_checkpoint(session, saver, i):
+    checkpoint_path = os.path.join(args.ckpt_dir, 'model.ckpt')
+    saver.save(session, checkpoint_path, global_step=i)
+
+
+
+def print_model_outputs(accuracy, loss, prediction, output_window_batch, probabilities):
+    print "Average accuracy per batch {0}".format(accuracy)
+    print "Batch Loss: {0}".format(loss)
+    # print "Output Predictions: {0}".format(prediction)
+    # print "Input Labels: {0}".format(output_window_batch)
+    # print "Output Prediction Probabilities: {0}".format(probabilities)
+
+
+
+def create_feed_dict(args, curModel, input_batch, label_batch, meta_batch,
+                            initial_state_batch, use_meta_batch): # add more for GAN
+    if args.model == 'seq2seq':
+        feed_dict = {
+            curModel.input_placeholder: input_batch,
+            curModel.meta_placeholder: meta_batch,
+            curModel.label_placeholder: label_batch,
+            curModel.initial_state_placeholder: initial_state_batch,
+            curModel.use_meta_placeholder: use_meta_batch
+            # attention
+        }
+    elif args.model == 'char':
+        feed_dict = {
+            curModel.input_placeholder: input_batch,
+            curModel.meta_placeholder: meta_batch,
+            curModel.label_placeholder: label_batch,
+            curModel.initial_state_placeholder: initial_state_batch,
+            curModel.use_meta_placeholder: use_meta_batch
+        }
+    elif args.model == 'cbow':
+        feed_dict = {
+            curModel.input_placeholder: input_batch,
+            curModel.label_placeholder: label_batch
+        }
+    elif args.model == 'gan':
+        feed_dict = {
+            curModel.input_placeholder: input_batch,
+            curModel.meta_placeholder: meta_batch,
+            curModel.label_placeholder: label_batch,
+            curModel.initial_state_placeholder: initial_state_batch,
+            curModel.use_meta_placeholder: use_meta_batch
+            # MORE
+        }
+    return feed_dict
 
 
 
@@ -93,17 +177,15 @@ def run_model(args):
     label_size = 1 if args.train == "sample" else 25
     batch_size = 1 if args.train == "sample" else BATCH_SIZE
     NUM_EPOCHS = args.num_epochs
-    CKPT_DIR = args.ckpt_dir
-    print CKPT_DIR
+    print "Using checkpoint directory: {0}".format(args.ckpt_dir)
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
-    print vocabulary
     vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
     vocabulary = dict(zip(vocabulary_keys, range(len(vocabulary_keys))))
-    print vocabulary
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
+
     cell_type = 'lstm'
     # cell_type = 'gru'
     # cell_type = 'rnn'
@@ -112,219 +194,175 @@ def run_model(args):
         curModel = Seq2SeqRNN(input_size, label_size, cell_type, args.set_config)
     elif args.model == 'char':
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config)
+        probabilities_op, logits_op, state_op = curModel.create_model(is_train = (args.train=='train'))
+        input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
+    elif args.model == 'cbow':
+        curModel = CBOW(input_size, label_size, batch_size, vocab_size, args.set_config)
+        probabilities_op, logits_op = curModel.create_model()
+        input_placeholder, label_placeholder, train_op, loss_op = curModel.train()
+    elif args.model == 'gan':
+        curModel = GenAdversarialNet(fake_input_size, real_input_size, label_size, is_training, batch_size, vocab_size, cell_type, hyperparam_path)
 
-    output_op, state_op = curModel.create_model(is_train = (args.train=='train'))
-    input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
-    prediction_op, accuracy_op, conf_op = create_metrics_op(output_op, label_placeholder, vocabulary_size)
+    prediction_op, accuracy_op, conf_op = create_metrics_op(probabilities_op, label_placeholder, vocabulary_size)
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
-    if args.train == 'train':
-        print "Reading in training filenames."
-        train_filenames = reader.abc_filenames(TRAIN_DATA)
-    elif args.train == 'test':
-        print "Reading in testing filenames."
-        test_filenames = reader.abc_filenames(TEST_DATA)
-    elif args.train == 'dev':
-        print "Reading in development filenames."
-        test_filenames = reader.abc_filenames(DEVELOPMENT_DATA)
 
+    print "Reading in {0}-set filenames.".format(args.train)
+    if args.train == 'train':
+        dataset_dir = TRAIN_DATA
+    elif args.train == 'test':
+        dataset_dir = TEST_DATA
+    else: # args.train == 'dev' or 'sample' (which has no dataset, but we just read anyway)
+        dataset_dir = DEVELOPMENT_DATA
+    dateset_filenames = reader.abc_filenames(dataset_dir)
 
     global_step = tf.Variable(0, trainable=False, name='global_step') #tf.contrib.framework.get_or_create_global_step()
 
-    # saver = tf.train.Saver(tf.all_variables(), max_to_keep=50)
     saver = tf.train.Saver(max_to_keep=NUM_EPOCHS)
 
     tf.summary.scalar('Loss', loss_op)
     summary_op = tf.summary.merge_all()
     step = 0
-    found_ckpt = False
 
     with tf.Session(config=GPU_CONFIG) as session:
         print "Inititialized TF Session!"
 
         # Checkpoint
-        if args.override:
-            if tf.gfile.Exists(CKPT_DIR):
-                tf.gfile.DeleteRecursively(CKPT_DIR)
-            tf.gfile.MakeDirs(CKPT_DIR)
+        i_stopped, found_ckpt = get_checkpoint(args, session, saver)
 
-        ckpt = tf.train.get_checkpoint_state(CKPT_DIR)
-        if ckpt and ckpt.model_checkpoint_path:
-            saver.restore(session, ckpt.model_checkpoint_path)
-            i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
-            print "Found checkpoint for epoch ({0})".format(i_stopped)
-            found_ckpt = True
-        else:
-            print('No checkpoint file found!')
-            i_stopped = 0
+        file_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
+        confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
+        batch_accuracies = []
 
-        # Train model
         if args.train == "train":
             init_op = tf.global_variables_initializer() # tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
             init_op.run()
+        else:
+            # Exit if no checkpoint to test
+            if not found_ckpt:
+                return
+            NUM_EPOCHS = i_stopped + 1
 
-            train_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
+        # Sample Model
+        if args.train == "sample":
+            # Sample Model
+            warm_length = 20
+            warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
 
+            warm_meta_array = [warm_meta[:] for idx in xrange(3)]
+            warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
+            warm_meta_array[1][3] = np.random.choice(11)
+
+            print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
+            for meta in warm_meta_array:
+                print "Current Metadata: {0}".format(meta)
+                generated = warm_chars[:]
+
+                # Warm Start
+                for j, c in enumerate(warm_chars):
+                    if cell_type == 'lstm':
+                        if j == 0:
+                            initial_state_sample = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
+                        else:
+                            initial_state_sample = []
+                            for lstm_tuple in state:
+                                initial_state_sample.append(lstm_tuple[0])
+                    else:
+                        initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
+
+                    feed_dict = create_feed_dict(args, curModel, [[c]], [[0]], [meta],
+                                                initial_state_sample, (j == 0))
+                    loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
+
+                # Sample
+                sampled_character = sample_with_temperature(logits, TEMPERATURE)
+                while sampled_character != 81 and len(generated) < 200:
+                    if cell_type == 'lstm':
+                        initial_state_sample = []
+                        for lstm_tuple in state:
+                            initial_state_sample.append(lstm_tuple[0])
+                    else:
+                        initial_state_sample = state[0]
+
+                    feed_dict = create_feed_dict(args, curModel, [[sampled_character]],
+                                                [[0]], [np.zeros_like(meta)],
+                                                initial_state_sample, False)
+
+                    loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
+                    sampled_character = sample_with_temperature(logits, TEMPERATURE)
+                    generated.append(sampled_character)
+
+                decoded_characters = [vocabulary_decode[char] for char in generated]
+
+                # Currently chopping off the last char regardless if its <end> or not
+                encoding = utils.encoding2ABC(meta, generated[1:-1])
+
+        # Train, dev, test model
+        else:
             for i in xrange(i_stopped, NUM_EPOCHS):
-                confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
                 print "Running epoch ({0})...".format(i)
-                random.shuffle(train_filenames)
-                for j, train_file in enumerate(train_filenames):
+                random.shuffle(dateset_filenames)
+                for j, data_file in enumerate(dateset_filenames):
                     # Get train data - into feed_dict
-                    data = reader.read_abc_pickle(train_file)
+                    data = reader.read_abc_pickle(data_file)
                     random.shuffle(data)
-                    train_batches = reader.abc_batch(data, n=batch_size)
-                    for k, train_batch in enumerate(train_batches):
-                        meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*train_batch)])
+                    data_batches = reader.abc_batch(data, n=batch_size)
+                    for k, data_batch in enumerate(data_batches):
+                        meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
+                        initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
 
-                        feed_dict = {
-                            input_placeholder: input_window_batch,
-                            meta_placeholder: meta_batch,
-                            initial_state_placeholder: [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)],
-                            use_meta_placeholder: True,
-                            label_placeholder: output_window_batch
-                        }
+                        feed_dict = create_feed_dict(args, curModel, input_window_batch,
+                                                    output_window_batch, meta_batch,
+                                                    initial_state_batch, True)
 
-                        _, summary, loss, output, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, output_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                        train_writer.add_summary(summary, step)
+                        if args.train == "train":
+                            _, summary, loss, probabilities, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                        else:
+                            summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                        file_writer.add_summary(summary, step)
 
+                        # Update confusion matrix
                         confusion_matrix += conf
 
-                        print "Average accuracy per batch {0}".format(accuracy)
-                        print "Batch Loss: {0}".format(loss)
-                        # print "Output Predictions: {0}".format(prediction)
-                        # print "Input Labels: {0}".format(output_window_batch)
-                        # print "Output Prediction Probabilities: {0}".format(output_pred)
-                        # print "Output State: {0}".format(output_state)
+                        # Record batch accuracies for test code
+                        if args.train == "test" or args.train == 'dev':
+                            batch_accuracies.append(accuracy)
+
+                        # Print out some stats
+                        print_model_outputs(accuracy, loss, prediction, output_window_batch, probabilities)
 
                         # Processed another batch
                         step += 1
 
-                # Checkpoint model - every epoch
-                checkpoint_path = os.path.join(CKPT_DIR, 'model.ckpt')
-                saver.save(session, checkpoint_path, global_step=i)
+                if args.train == "train":
+                    # Checkpoint model - every epoch
+                    save_checkpoint(session, saver, i)
+                    confusion_suffix = i
+                else: # dev or test (NOT sample)
+                    test_accuracy = np.mean(batch_accuracies)
+                    print "Model {0} accuracy: {1}".format(args.train, test_accuracy)
+                    confusion_suffix = "_{0}-set".format(args.train)
 
-                plot_confusion(confusion_matrix, vocabulary, i)#, characters_remove=['|', '2'])
+                    if args.train == 'dev':
+                        # Update the file for choosing best hyperparameters
+                        curFile = open(curModel.config.dev_filename, 'a')
+                        curFile.write("Dev set accuracy: {0}".format(test_accuracy))
+                        curFile.write('\n')
+                        curFile.close()
 
-        # Test Model
-        if args.train == "test" or args.train == 'dev':
-            # Exit if no checkpoint to test
-            if not found_ckpt:
-                return
-
-            confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
-            batch_accuracies = []
-            test_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
-
-            if args.train == "test":
-                print "Running test set from file {0}".format(TEST_DATA)
-            elif args.train == "dev":
-                print "Running dev set from file {0}".format(DEVELOPMENT_DATA)
-
-            random.shuffle(test_filenames)
-            for j, test_file in enumerate(test_filenames):
-                # Get test data - into feed_dict
-                data = reader.read_abc_pickle(test_file)
-                random.shuffle(data)
-                test_batches = reader.abc_batch(data, n=batch_size)
-                for k, test_batch in enumerate(test_batches):
-                    meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*test_batch)])
-
-                    feed_dict = {
-                        input_placeholder: input_window_batch,
-                        meta_placeholder: meta_batch,
-                        initial_state_placeholder: [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)],
-                        use_meta_placeholder: True,
-                        label_placeholder: output_window_batch
-                    }
-
-                    summary, loss, output, state, prediction, accuracy, conf = session.run([summary_op, loss_op, output_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                    test_writer.add_summary(summary, step)
-
-                    confusion_matrix += conf
-                    batch_accuracies.append(accuracy)
-
-                    print "Average accuracy per batch {0}".format(accuracy)
-                    print "Batch Loss: {0}".format(loss)
-                    # print "Output Predictions: {0}".format(prediction)
-                    # print "Input Labels: {0}".format(output_window_batch)
-                    # print "Output Prediction Probabilities: {0}".format(output_pred)
-                    # print "Output State: {0}".format(output_state)
-
-                    # Processed another batch
-                    step += 1
-
-            test_accuracy = np.mean(batch_accuracies)
-            print "Model TEST accuracy: {0}".format(test_accuracy)
-
-            plot_confusion(confusion_matrix, vocabulary, "_dev-set", characters_remove=['|', '2'])
-
-            if args.train == 'dev':
-                # Update the file for choosing best hyperparameters
-                curFile = open(curModel.config.dev_filename, 'a')
-                curFile.write("Dev set accuracy: {0}".format(test_accuracy))
-                curFile.write('\n')
-                curFile.close()
+                # Plot Confusion Matrix
+                plot_confusion(confusion_matrix, vocabulary, confusion_suffix)#, characters_remove=['|', '2'])
 
 
-        # Sample Model
-        else:
-            # Exit if no checkpoint to sample
-            if not found_ckpt:
-                return
 
-            warm_length = 20
-            warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
-            generated = warm_chars[1:]
 
-            print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
-            for j, c in enumerate(warm_chars):
-                if cell_type == 'lstm':
-                    if j == 0:
-                        initial_state_sample = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
-                    else:
-                        initial_state_sample = []
-                        for lstm_tuple in state:
-                            initial_state_sample.append(lstm_tuple[0])
-                else:
-                    initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
 
-                feed_dict = {
-                    input_placeholder: [[c]],
-                    meta_placeholder: [warm_meta],
-                    initial_state_placeholder: initial_state_sample,
-                    use_meta_placeholder: j == 0,
-                    label_placeholder: [[0]]   # TODO: revisit
-                }
 
-                loss, output, state, prediction = session.run([loss_op, output_op, state_op, prediction_op], feed_dict=feed_dict)
 
-            sampled_character = prediction[0, 0]
-            while True:
-                if cell_type == 'lstm':
-                    initial_state_sample = []
-                    for lstm_tuple in state:
-                        initial_state_sample.append(lstm_tuple[0])
-                else:
-                    initial_state_sample = state[0]
 
-                feed_dict = {
-                    input_placeholder: [[sampled_character]],
-                    meta_placeholder: [np.zeros_like(warm_meta)],
-                    initial_state_placeholder: initial_state_sample,
-                    use_meta_placeholder: False,
-                    label_placeholder: [[0]]   # TODO: revisit
-                }
 
-                loss, output, state, prediction = session.run([loss_op, output_op, state_op, prediction_op], feed_dict=feed_dict)
-                if prediction[0, 0] == 81 or len(generated) > 100:
-                    break
-                # sample from "output" (probabilities) instead of finding the argmax?
-                sampled_character = np.random.choice(len(output.flatten()), p=output.flatten())
-                generated.append(sampled_character)
 
-            decoded_characters = [vocabulary_decode[char] for char in generated]
-            print ''.join(decoded_characters)
+
 
 
 
@@ -338,13 +376,13 @@ def parseCommandLine():
 
     print("Parsing Command Line Arguments...")
     requiredModel = parser.add_argument_group('Required Model arguments')
-    requiredModel.add_argument('-m', choices = ["seq2seq", "char"], type = str,
+    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "cbow", "gan"], type = str,
     					dest = 'model', required = True, help = 'Type of model to run')
     requiredTrain = parser.add_argument_group('Required Train/Test arguments')
     requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
     					dest = 'train', required = True, help = 'Training or Testing phase to be run')
 
-    requiredTrain.add_argument('-c', type = str, dest = 'set_config', required = True,
+    requiredTrain.add_argument('-c', type = str, dest = 'set_config',
                                help = 'Set hyperparameters', default='')
 
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
@@ -356,13 +394,14 @@ def parseCommandLine():
 
 
 def main(_):
-    if tf.gfile.Exists(SUMMARY_DIR):
-        tf.gfile.DeleteRecursively(SUMMARY_DIR)
-    tf.gfile.MakeDirs(SUMMARY_DIR)
 
     args = parseCommandLine()
     run_model(args)
 
+    if args.train != "sample":
+        if tf.gfile.Exists(SUMMARY_DIR):
+            tf.gfile.DeleteRecursively(SUMMARY_DIR)
+        tf.gfile.MakeDirs(SUMMARY_DIR)
 
 if __name__ == "__main__":
     tf.app.run()

@@ -149,7 +149,7 @@ def keySigDecomposer(line):
 	# then determine the key
 	keys = ['B#','E#','A#','D#','G#','C#','F#','B','E','A','D','G','C',
 			'F','Bb','Eb','Ab','Db','Gb','Cb','Fb']
-	mode_modifier = {MODE_MAJ:-12, MODE_MIN:-9, MODE_MIX:-11, MODE_DOR:-10, 
+	mode_modifier = {MODE_MAJ:-12, MODE_MIN:-9, MODE_MIX:-11, MODE_DOR:-10,
 					 MODE_PHR:-8, MODE_LYD:-13, MODE_LOC:-7}
 
 	key = keys.index(line) + mode_modifier[mode]
@@ -175,8 +175,8 @@ def keySigComposer(num_flats, mode):
 def loadCleanABC(abcname):
 	"""
 	Loads a file in .abc format (cleaned), and returns the meta data and music contained
-	in the file. 
-	
+	in the file.
+
 	@meta - dictionary of metadata, key is the metadata type (ex. 'K')
 	@music - string of the music
 	"""
@@ -188,7 +188,7 @@ def loadCleanABC(abcname):
 	with open(abcname,'r') as abcfile:
 		for line in abcfile:
 			# break down the key signature into # of sharps and flats
-			# and mode				
+			# and mode
 			if counter>0:
 				if line[0]=='K':
 					try:

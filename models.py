@@ -47,6 +47,10 @@ class Config(object):
 		self.hidden_units = 100
 		self.num_outputs = 2
 		self.cnn_lr = 0.001
+		self.label_smooth = 0.15
+		self.generator_prob = 0.1
+		self.num_classes = 5
+		self.gan_lr = 0.001
 
 		if len(hyperparam_path)!=0:
 			print "Setting hyperparameters from a file %s" %hyperparam_path
@@ -55,10 +59,12 @@ class Config(object):
 
 class CBOW(object):
 
-	def __init__(self, input_size, label_size, hyperparam_path):
+	def __init__(self, input_size, label_size, batch_size, vocab_size, hyperparam_path):
 		self.config = Config(hyperparam_path)
 		self.input_size = input_size
 		self.label_size = label_size
+		self.config.batch_size = batch_size
+		self.config.vocab_size = vocab_size
 		self.input_placeholder = tf.placeholder(tf.int32, shape=[None, self.input_size])
 		self.label_placeholder = tf.placeholder(tf.int32, shape=[None, self.label_size])
 		self.embeddings = tf.Variable(tf.random_uniform([self.config.vocab_size,
@@ -74,11 +80,11 @@ class CBOW(object):
 
 		word_vec =  tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
 		average_embedding = tf.reduce_sum(word_vec, reduction_indices=1)
-		model_output = tf.add(tf.matmul(average_embedding, weight), bias)
-		self.pred = model_output
+		self.output = tf.add(tf.matmul(average_embedding, weight), bias)
+		self.pred = tf.nn.softmax(self.output)
 		print("Built the CBOW Model.....")
 
-		return model_output
+		return self.pred, self.output
 
 	def train(self):
 		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
@@ -172,7 +178,7 @@ class CharRNN(object):
 
 		print("Built the Char RNN Model...")
 
-		return self.pred, state
+		return self.pred, self.output, state
 
 
 
@@ -281,87 +287,189 @@ class CharRNN(object):
 
 
 
-# class Discriminator(object):
+class Discriminator(object):
 
-# 	def __init__(self, inputs, labels, is_training, batch_size,use_lrelu=True, use_batchnorm=False, dropout=None, reuse=True):
-# 		self.input = inputs
-# 		self.labels = labels
-# 		self.batch_size = batch_size
-# 		self.is_training = is_training
-# 		self.reuse = reuse
-# 		self.dropout = dropout
-# 		self.use_batchnorm = use_batchnorm
-# 		self.use_lrelu = use_lrelu
-# 		self.config = Config()
+	def __init__(self, inputs, labels, is_training, batch_size,use_lrelu=True, use_batchnorm=False, dropout=None, reuse=True):
+		self.input = inputs
+		self.labels = labels
+		self.batch_size = batch_size
+		self.is_training = is_training
+		self.reuse = reuse
+		self.dropout = dropout
+		self.use_batchnorm = use_batchnorm
+		self.use_lrelu = use_lrelu
+		self.config = Config()
 
-# 	def lrelu(self, x, leak=0.2, name='lrelu'):
-# 		return tf.maximum(x, leak*x)
+	def lrelu(self, x, leak=0.2, name='lrelu'):
+		return tf.maximum(x, leak*x)
 
-# 	def conv_layer(self, inputs, filterSz1, strideSz1, scope):
-# 		l1 = tf.nn.conv2d(inputs,filterSz1,strideSz1,padding='SAME')
-# 		if use_batchnorm:
-# 			l1 = tf.contrib.layers.batch_norm(l1, decay=0.9,center=True,scale=True,
-# 						epsilon=1e-8,is_training=is_training, reuse=self.reuse, trainable=True, scope=scope)
+	def conv_layer(self, inputs, filterSz1, strideSz1, scope):
+		l1 = tf.nn.conv2d(inputs,filterSz1,strideSz1,padding='SAME')
+		if use_batchnorm:
+			l1 = tf.contrib.layers.batch_norm(l1, decay=0.9,center=True,scale=True,
+						epsilon=1e-8,is_training=is_training, reuse=self.reuse, trainable=True, scope=scope)
 
-# 		if use_lrelu:
-# 			l2 = self.lrelu(l1)
-# 		else:
-# 			l2 = tf.nn.relu(l1)
+		if use_lrelu:
+			l2 = self.lrelu(l1)
+		else:
+			l2 = tf.nn.relu(l1)
 
-# 		if self.dropout is not None and self.is_training == True:
-# 			l2 = tf.nn.dropout(l2, self.dropout)
+		if self.dropout is not None and self.is_training == True:
+			l2 = tf.nn.dropout(l2, self.dropout)
 
-# 		return l2
-
-
-# 	def create_model(self):
-# 		with tf.variable_scope("discriminator") as scope:
-# 			if self.reuse:
-# 				scope.reuse_variables()
+		return l2
 
 
-# 			filterSz1 = [3, self.config.embedding_dims,1, self.config.numFilters1]
-# 			strideSz1 = [1,1,1,1]
-# 			conv_layer1 = self.conv_layer(self.input,filterSz1,strideSz1,padding='SAME', scope)
-
-# 			filterSz2 = [3, 1, self.config.numFilters, self.config.numFilters]
-# 			strideSz2 = [1,1,1,1]
-# 			conv_layer2 = self.conv_layer(conv_layer1,filterSz2,strideSz2,padding='SAME', scope)
-
-# 			win_size = [1,3,1,1]
-# 			strideSz3 = [1,1,1,1]
-# 			conv_layer3 = tf.nn.max_pool(conv_layer2,ksize=win_size,strides=strideSz3, padding='SAME')
-
-# 			layerShape = conv_layer3.get_shape().as_list()
-# 			numParams = reduce(lambda x, y: x*y, layerShape[1:])
-
-# 			layer_flatten = tf.reshape(conv_layer3, [-1, numParams])
-
-# 			layer4 = tf.contrib.layers.fully_connected(layer_flatten, num_outputs=self.config.hidden_units,
-# 						reuse=self.reuse,trainable=True, scope=scope)
-
-# 			if self.dropout is not None and self.is_training == True:
-# 				layer4 = tf.nn.dropout(layer4, self.dropout)
+	def create_model(self):
+		with tf.variable_scope("discriminator") as scope:
+			if self.reuse:
+				scope.reuse_variables()
 
 
-# 			layer5 = tf.contrib.layers.fully_connected(layer4, num_outputs=self.config.num_outputs,
-# 						reuse=self.reuse,trainable=True, scope=scope)
+			filterSz1 = [3, self.config.embedding_dims,1, self.config.numFilters1]
+			strideSz1 = [1,1,1,1]
+			conv_layer1 = self.conv_layer(self.input,filterSz1,strideSz1,padding='SAME', scope=scope)
 
-# 			self.output = layer5
-# 			self.pred = tf.nn.softmax(layer5)
+			filterSz2 = [3, 1, self.config.numFilters, self.config.numFilters]
+			strideSz2 = [1,1,1,1]
+			conv_layer2 = self.conv_layer(conv_layer1,filterSz2,strideSz2,padding='SAME', scope=scope)
 
-# 			return self.pred
+			win_size = [1,3,1,1]
+			strideSz3 = [1,1,1,1]
+			conv_layer3 = tf.nn.max_pool(conv_layer2,ksize=win_size,strides=strideSz3, padding='SAME')
+
+			layerShape = conv_layer3.get_shape().as_list()
+			numParams = reduce(lambda x, y: x*y, layerShape[1:])
+
+			layer_flatten = tf.reshape(conv_layer3, [-1, numParams])
+
+			layer4 = tf.contrib.layers.fully_connected(layer_flatten, num_outputs=self.config.hidden_units,
+						reuse=self.reuse,trainable=True, scope=scope)
+
+			if self.dropout is not None and self.is_training == True:
+				layer4 = tf.nn.dropout(layer4, self.dropout)
+
+
+			layer5 = tf.contrib.layers.fully_connected(layer4, num_outputs=self.config.num_outputs,
+						reuse=self.reuse,trainable=True, scope=scope)
+
+			self.output = layer5
+			self.pred = tf.nn.softmax(layer5)
+
+			return self.pred
+
+
+	def train(self, op='adam'):
+		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
+						 labels=self.labels))
+
+
+		train_op = tf.train.AdamOptimizer(self.config.cnn_lr).minimize(self.loss)
+		return train_op
 
 
 
-# 	def train(self, op='adam'):
-# 		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
-# 						 labels=self.labels))
+class GenAdversarialNet(object):
 
 
-# 		train_op = tf.train.AdamOptimizer(self.config.cnn_lr).minimize(self.loss)
-# 		return train_op
+	def __init__(self, real_input_size, fake_input_size, real_label_size, fake_label_size ,is_training, cell_type,
+					 hyperparam_path, use_lrelu=True, use_batchnorm=False, dropout=None):
+		self.fake_input_size = fake_input_size
+		self.real_input_size = real_input_size
+		self.label_size = label_size
+		self.is_training = is_training
+		self.cell_type = cell_type
+		self.hyperparam_path = hyperparam_path
+		self. use_lrelu = use_lrelu
+		self.use_batchnorm = use_batchnorm
+		self.dropout = dropout
+		self.config = Config()
+
+		output_shape_real = (None,) + tuple([real_label_size])
+		output_shape_fake = (None,) + tuple([fake_label_size])
+		self.real_label_placeholder = tf.placeholder(tf.float32, shape=output_shape_real, name='Real Output')
+		self.fake_label_placeholder = tf.placeholder(tf.float32, shape=output_shape_fake, name='Fake Output')
+
+		real_input_shape = (None,) + tuple(self.real_input_size)
+		self.real_input_placeholder = tf.placeholder(tf.float32, shape=real_input_shape, name='Real Input')
+
+
+	# Function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
+	def sigmoid_kl_with_logits(logits, targets):
+    # broadcasts the same target value across the whole batch
+    # this is implemented so awkwardly because tensorflow lacks an x log x op
+	    if targets in [0., 1.]:
+	        entropy = 0.
+	    else:
+	        entropy = - targets * np.log(targets) - (1. - targets) * np.log(1. - targets)
+	    return tf.nn.sigmoid_cross_entropy_with_logits(logits, tf.ones_like(logits) * targets) - entropy
+
+	# Ideas for function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
+	def normalize_class_outputs(logits):
+		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size, 1]))
+		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size, self.config.num_classes - 1])
+		mx = tf.reduce_max(positive_class_logits, 1, keep_dims=True)
+		safe_pos_class_logits = positive_class_logits - mx
+
+		gan_logits = tf.log(tf.reduce_sum(tf.exp(safe_pos_class_logits), 1)) + tf.squeeze(mx) - generated_class_logits
+		return gan_logits
+
+
+	def create_model(self):
+		generator_model = CharRNN(self.fake_input_size, self.label_size, self.batch_size,self.vocab_size,
+								self.cell_type, self.hyperparam_path)
+		generator_model = generator_model.create_model(is_train = True)
+		self.rnn_placeholder, self.rnn_label_placeholder, self.rnn_meta_placeholder, \
+			self.rnn_initial_state_placeholder, self.rnn_use_meta_placeholder, \
+			self.rnn_train_op, self.rnn_loss = generator_model.train()
+		generator_output = generator_model.output
+
+		# Inputs the fake examples from the CharRNN to the CNN Discriminator
+		discriminator_model = Discriminator(generator_output, self.labels, is_training=self.is_training,
+				 batch_size=self.batch_size,use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 dropout=self.dropout, reuse=False)
+		discriminator_model = discriminator_model.create_model()
+		self.discriminator_fake = discriminator_model.train()
+
+		# Inputs the real sequences from the text files to the CNN Discriminator
+		embeddings_real = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
+										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
+		embeddings = tf.nn.embedding_lookup(embeddings_real, self.real_input_placeholder)
+		discriminator_real_samp = Discriminator(embeddings, self.labels, is_training=self.is_training,
+				 batch_size=self.batch_size,use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 dropout=self.dropout, reuse=True)
+		discriminator_real_samp = discriminator_real_samp.create_model()
+		self.discriminator_real = discriminator_real_samp.train()
+
+
+		self.gan_real_output = self.discriminator_real.output
+		self.gan_fake_output = self.discriminator_fake.output
+
+		self.gan_logits_real = self.normalize_class_outputs(self.gan_real_output)
+		self.gan_logits_fake = self.normalize_class_outputs(self.gan_fake_output)
+
+		self.gan_pred_real = self.sigmoid_kl_with_logits(self.gan_logits_real, 1. - self.label_smooth)
+		self.gan_pred_fake = tf.nn.sigmoid_cross_entropy_with_logits(self.gan_logits_fake,
+            					tf.zeros_like(self.gan_logits_fake))
+
+		return self.gan_pred_real, self.gan_pred_fake
 
 
 
-# class GenAdversarialNet(object):
+	def train(self):
+		class_loss_weight = 1
+		loss_class_real = class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits_real,
+            self.real_label_placeholder)
+
+		loss_class_fake = class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits_fake,
+            self.fake_label_placeholder)
+
+		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake + loss_class_real + loss_class_fake)
+		tot_g_loss = tf.reduce_mean(self.sigmoid_kl_with_logits(self.gan_pred_fake, self.config.generator_prob))
+
+		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_d_loss)
+		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_g_loss)
+
+		return self.rnn_placeholder,self.real_input_placeholder, self.real_label_placeholder, \
+				 self.fake_label_placeholder, self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
+				 self.rnn_use_meta_placeholder, self.train_op_d, self.train_op_gan
