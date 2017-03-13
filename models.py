@@ -1,5 +1,10 @@
 import tensorflow as tf
-from tensorflow.contrib import rnn
+tf_ver = tf.__version__
+if str(tf_ver) != '0.12.1':
+	from tensorflow.contrib import rnn
+else:
+	from tensorflow.python.ops import rnn_cell as rnn
+
 from tensorflow.contrib import seq2seq
 import numpy as np
 import sys
@@ -98,13 +103,14 @@ class CBOW(object):
 
 class CharRNN(object):
 
-	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type, hyperparam_path):
+	def __init__(self, input_size, label_size, batch_size, vocab_size, cell_type, hyperparam_path, gan_inputs=None):
 		self.input_size = input_size
 		self.label_size = label_size
 		self.cell_type = cell_type
 		self.config = Config(hyperparam_path)
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
+		self.gan_inputs = gan_inputs
 
 		# self.initial_state = self.cell.zero_state(self.config.batch_size, dtype=tf.int32)
 		# input_shape = (None,) + tuple([self.config.max_length,input_size])
@@ -134,6 +140,8 @@ class CharRNN(object):
 		if is_train:
 			self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=1.0)
 		rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
+
+		
 
 		# Embedding lookup for ABC format characters
 		embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
@@ -289,7 +297,7 @@ class CharRNN(object):
 
 class Discriminator(object):
 
-	def __init__(self, inputs, labels, is_training, batch_size,use_lrelu=True, use_batchnorm=False, dropout=None, reuse=True):
+	def __init__(self, inputs, labels, is_training, batch_size, hyperparam_path, use_lrelu=True, use_batchnorm=False, dropout=None, reuse=True):
 		self.input = inputs
 		self.labels = labels
 		self.batch_size = batch_size
@@ -298,7 +306,7 @@ class Discriminator(object):
 		self.dropout = dropout
 		self.use_batchnorm = use_batchnorm
 		self.use_lrelu = use_lrelu
-		self.config = Config()
+		self.config = Config(hyperparam_path)
 
 	def lrelu(self, x, leak=0.2, name='lrelu'):
 		return tf.maximum(x, leak*x)
@@ -376,22 +384,23 @@ class GenAdversarialNet(object):
 					 hyperparam_path, use_lrelu=True, use_batchnorm=False, dropout=None):
 		self.fake_input_size = fake_input_size
 		self.real_input_size = real_input_size
-		self.label_size = label_size
+		self.real_label_size = real_label_size
+		self.fake_label_size = fake_label_size
 		self.is_training = is_training
 		self.cell_type = cell_type
 		self.hyperparam_path = hyperparam_path
-		self. use_lrelu = use_lrelu
+		self.use_lrelu = use_lrelu
 		self.use_batchnorm = use_batchnorm
 		self.dropout = dropout
-		self.config = Config()
+		self.config = Config(hyperparam_path)
 
 		output_shape_real = (None,) + tuple([real_label_size])
 		output_shape_fake = (None,) + tuple([fake_label_size])
-		self.real_label_placeholder = tf.placeholder(tf.float32, shape=output_shape_real, name='Real Output')
-		self.fake_label_placeholder = tf.placeholder(tf.float32, shape=output_shape_fake, name='Fake Output')
+		self.real_label_placeholder = tf.placeholder(tf.float32, shape=output_shape_real, name='Real_Output')
+		self.fake_label_placeholder = tf.placeholder(tf.float32, shape=output_shape_fake, name='Fake_Output')
 
-		real_input_shape = (None,) + tuple(self.real_input_size)
-		self.real_input_placeholder = tf.placeholder(tf.float32, shape=real_input_shape, name='Real Input')
+		real_input_shape = (None,) + tuple([self.real_input_size])
+		self.real_input_placeholder = tf.placeholder(tf.float32, shape=real_input_shape, name='Real_Input')
 
 
 	# Function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
@@ -426,7 +435,7 @@ class GenAdversarialNet(object):
 
 		# Inputs the fake examples from the CharRNN to the CNN Discriminator
 		discriminator_model = Discriminator(generator_output, self.labels, is_training=self.is_training,
-				 batch_size=self.batch_size,use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 batch_size=self.batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=False)
 		discriminator_model = discriminator_model.create_model()
 		self.discriminator_fake = discriminator_model.train()
