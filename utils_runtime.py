@@ -4,7 +4,7 @@ import random
 
 from utils_preprocess import *
 
-def genWarmStartDataset(data_len, vocab_dir='/data/the_session_processed', 
+def genWarmStartDataset(data_len, 
 						dataFolder='/data/montreal_plus_local_processed'):
 	"""
 	Generates metadata and music data for the use in warm starting the RNN models
@@ -18,8 +18,8 @@ def genWarmStartDataset(data_len, vocab_dir='/data/the_session_processed',
 	oneHotHeaders = ('R', 'M', 'L', 'K_key', 'K_mode')
 	otherHeaders = ('len', 'complexity')
 	
-	meta_map = pickle.load(open(os.path.join(vocab_dir, 'vocab_map_meta.p'), 'r'))
-	music_map = pickle.load(open(os.path.join(vocab_dir, 'vocab_map_music.p'), 'r'))
+	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
+	music_map = pickle.load(open('/data/global_map_music.p','rb'))
 
 	# while loop here, just in case that the file we choose contains characters that
 	# does not appear in the original dataset
