@@ -69,3 +69,10 @@ The song portion of the numpy array is **82** dimensions (i.e. **80** music char
 'j': 61, 'm': 62, 'l': 63, 'o': 64, 'n': 65, 'p': 66, 's': 67, 'r': 68, 'u': 69, 't': 70, 
 'w': 71, 'v': 72, 'y': 73, 'x': 74, '{': 75, 'z': 76, '}': 77, '|': 78, '~': 79}
 ```
+
+## Sherlock access
+* Ger a kerberos ticket using kinit nipuna1@stanford.edu
+* Log into nipuna1@sherlock.stanford.edu
+* Run the command 'srun -p gpu --qos gpu --gres gpu:1 --pty bash' and remember the gpu node you are assigned
+* Treat the machine like a normal GPU interactive session i.e. run tests, screens etc
+* To review a long job over screen, log into Sherlock and then type the command 'ssh gpu-[0-9]-[0-9]' depending on the node you were allocated the first time you ran the job. You will be able to log into the node and then proceed as normal
