@@ -142,11 +142,12 @@ class CharRNN(object):
 		rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
 
 		
-
 		# Embedding lookup for ABC format characters
 		embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
 										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
-		embeddings = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
+		true_inputs = self.input_placeholder if (self.gan_inputs == None) else self.gan_inputs
+
+		embeddings = tf.nn.embedding_lookup(embeddings_var, true_inputs)
 
 		# Embedding lookup for Metadata
 		embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.vocab_meta, self.config.meta_embed],
@@ -380,12 +381,10 @@ class Discriminator(object):
 class GenAdversarialNet(object):
 
 
-	def __init__(self, real_input_size, fake_input_size, real_label_size, fake_label_size ,is_training, cell_type,
+	def __init__(self, input_size, label_size ,is_training, cell_type,
 					 hyperparam_path, use_lrelu=True, use_batchnorm=False, dropout=None):
-		self.fake_input_size = fake_input_size
-		self.real_input_size = real_input_size
-		self.real_label_size = real_label_size
-		self.fake_label_size = fake_label_size
+		self.input_size = input_size
+		self.label_size = label_size
 		self.is_training = is_training
 		self.cell_type = cell_type
 		self.hyperparam_path = hyperparam_path
@@ -394,13 +393,11 @@ class GenAdversarialNet(object):
 		self.dropout = dropout
 		self.config = Config(hyperparam_path)
 
-		output_shape_real = (None,) + tuple([real_label_size])
-		output_shape_fake = (None,) + tuple([fake_label_size])
-		self.real_label_placeholder = tf.placeholder(tf.float32, shape=output_shape_real, name='Real_Output')
-		self.fake_label_placeholder = tf.placeholder(tf.float32, shape=output_shape_fake, name='Fake_Output')
+		output_shape = (None,) + tuple([self.label_size])
+		self.label_placeholder = tf.placeholder(tf.float32, shape=output_shape, name='Output')
 
-		real_input_shape = (None,) + tuple([self.real_input_size])
-		self.real_input_placeholder = tf.placeholder(tf.float32, shape=real_input_shape, name='Real_Input')
+		input_shape = (None,) + tuple([self.input_size])
+		self.input_placeholder = tf.placeholder(tf.float32, shape=input_shape, name='Input')
 
 
 	# Function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
@@ -425,8 +422,10 @@ class GenAdversarialNet(object):
 
 
 	def create_model(self):
-		generator_model = CharRNN(self.fake_input_size, self.label_size, self.batch_size,self.vocab_size,
-								self.cell_type, self.hyperparam_path)
+		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2, ])
+
+		generator_model = CharRNN(self.input_size, self.label_size, self.batch_size,self.vocab_size,
+								self.cell_type, self.hyperparam_path, gan_inputs = self.input_placeholder)
 		generator_model = generator_model.create_model(is_train = True)
 		self.rnn_placeholder, self.rnn_label_placeholder, self.rnn_meta_placeholder, \
 			self.rnn_initial_state_placeholder, self.rnn_use_meta_placeholder, \
@@ -443,7 +442,7 @@ class GenAdversarialNet(object):
 		# Inputs the real sequences from the text files to the CNN Discriminator
 		embeddings_real = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
 										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
-		embeddings = tf.nn.embedding_lookup(embeddings_real, self.real_input_placeholder)
+		embeddings = tf.nn.embedding_lookup(embeddings_real, self.input_placeholder)
 		discriminator_real_samp = Discriminator(embeddings, self.labels, is_training=self.is_training,
 				 batch_size=self.batch_size,use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=True)
@@ -467,18 +466,17 @@ class GenAdversarialNet(object):
 
 	def train(self):
 		class_loss_weight = 1
-		loss_class_real = class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits_real,
-            self.real_label_placeholder)
 
-		loss_class_fake = class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits_fake,
-            self.fake_label_placeholder)
+		self.gan_logits = tf.concat([self.gan_logits_real, self.gan_logits_fake],axis=0)
+		loss_class = class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits,
+            		self.label_placeholder)
 
-		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake + loss_class_real + loss_class_fake)
+		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake + loss_class)
 		tot_g_loss = tf.reduce_mean(self.sigmoid_kl_with_logits(self.gan_pred_fake, self.config.generator_prob))
 
 		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_d_loss)
 		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_g_loss)
 
-		return self.rnn_placeholder,self.real_input_placeholder, self.real_label_placeholder, \
-				 self.fake_label_placeholder, self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
+		return self.input_placeholder, self.label_placeholder, \
+				self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
 				 self.rnn_use_meta_placeholder, self.train_op_d, self.train_op_gan
