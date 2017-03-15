@@ -3,7 +3,7 @@ import numpy as np
 import os
 import sys
 from argparse import ArgumentParser
-from models import CharRNN, Config, Seq2SeqRNN
+from models import CharRNN, Config, Seq2SeqRNN, CBOW
 # from utils_preprocess import hdf52dict
 import pickle
 import reader
@@ -45,7 +45,7 @@ SUMMARY_DIR = DIR_MODIFIER + '/summary'
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
 GPU_CONFIG = tf.ConfigProto()
-GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
+GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
 
 # For T --> inf, p is uniform. Easy to sample from!
 # For T --> 0, p "concentrates" on arg max. Hard to sample from!
@@ -54,7 +54,8 @@ TEMPERATURE = 1.0
 
 
 def create_metrics_op(probabilities, labels, vocabulary_size):
-    prediction = tf.to_int32(tf.argmax(probabilities, axis=2))
+    last_axis = len(probabilities.get_shape().as_list())
+    prediction = tf.to_int32(tf.argmax(probabilities, axis=last_axis-1))
 
     difference = labels - prediction
     zero = tf.constant(0, dtype=tf.int32)
@@ -138,11 +139,10 @@ def get_checkpoint(args, session, saver):
 
 
 
-def save_checkpoint(session, saver, i):
+def save_checkpoint(args, session, saver, i):
     checkpoint_path = os.path.join(args.ckpt_dir, 'model.ckpt')
     saver.save(session, checkpoint_path, global_step=i)
-
-
+    saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
 
 def print_model_outputs(accuracy, loss, prediction, output_window_batch, probabilities):
     print "Average accuracy per batch {0}".format(accuracy)
@@ -202,8 +202,10 @@ def run_model(args):
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
-    vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
-    vocabulary = dict(zip(vocabulary_keys, range(len(vocabulary_keys))))
+    vocab_sz = len(vocabulary)
+    vocabulary["<start>"] = vocab_sz
+    vocabulary["<end>"] = vocab_sz+1
+
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
 
@@ -228,7 +230,7 @@ def run_model(args):
         input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
     
     elif args.model == 'cbow':
-        curModel = CBOW(input_size, label_size, batch_size, vocab_size, args.set_config)
+        curModel = CBOW(input_size, batch_size, vocabulary_size, args.set_config)
         probabilities_op, logits_op = curModel.create_model()
         input_placeholder, label_placeholder, train_op, loss_op = curModel.train()
 
@@ -338,6 +340,11 @@ def run_model(args):
                     data_batches = reader.abc_batch(data, n=batch_size)
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
+
+                        # only take the last element for the CBOW
+                        if args.model == 'cbow':
+                            output_window_batch = [d[-1] for d in output_window_batch]
+
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
 
                         feed_dict = create_feed_dict(args, curModel, input_window_batch,
@@ -345,8 +352,10 @@ def run_model(args):
                                                     initial_state_batch, True)
 
                         if args.train == "train":
+                            #_, summary, loss, probabilities, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                             _, summary, loss, probabilities, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                         else:
+                            #summary, loss, probabilities, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                             summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                         file_writer.add_summary(summary, step)
 
@@ -365,7 +374,7 @@ def run_model(args):
 
                 if args.train == "train":
                     # Checkpoint model - every epoch
-                    save_checkpoint(session, saver, i)
+                    save_checkpoint(args, session, saver, i)
                     confusion_suffix = i
                 else: # dev or test (NOT sample)
                     test_accuracy = np.mean(batch_accuracies)
@@ -381,7 +390,6 @@ def run_model(args):
 
                 # Plot Confusion Matrix
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix)#, characters_remove=['|', '2'])
-
 
 def run_gan(args):
     input_size = 1 if args.train == "sample" else 25
@@ -609,10 +617,10 @@ def main(_):
     else:
         run_model(args)
 
-    if args.train != "sample":
-        if tf.gfile.Exists(SUMMARY_DIR):
-            tf.gfile.DeleteRecursively(SUMMARY_DIR)
-        tf.gfile.MakeDirs(SUMMARY_DIR)
+    # if args.train != "sample":
+    #     if tf.gfile.Exists(SUMMARY_DIR):
+    #         tf.gfile.DeleteRecursively(SUMMARY_DIR)
+    #     tf.gfile.MakeDirs(SUMMARY_DIR)
 
 if __name__ == "__main__":
     tf.app.run()
