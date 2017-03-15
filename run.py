@@ -54,7 +54,8 @@ TEMPERATURE = 1.0
 
 
 def create_metrics_op(probabilities, labels, vocabulary_size):
-    prediction = tf.to_int32(tf.argmax(probabilities, axis=2))
+    last_axis = len(probabilities.get_shape().as_list())
+    prediction = tf.to_int32(tf.argmax(probabilities, axis=last_axis-1))
 
     difference = labels - prediction
     zero = tf.constant(0, dtype=tf.int32)
@@ -332,6 +333,11 @@ def run_model(args):
                     data_batches = reader.abc_batch(data, n=batch_size)
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
+
+                        # only take the last element for the CBOW
+                        if args.model == 'cbow':
+                            output_window_batch = [d[-1] for d in output_window_batch]
+
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
 
                         feed_dict = create_feed_dict(args, curModel, input_window_batch,
@@ -339,8 +345,10 @@ def run_model(args):
                                                     initial_state_batch, True)
 
                         if args.train == "train":
+                            #_, summary, loss, probabilities, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                             _, summary, loss, probabilities, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                         else:
+                            #summary, loss, probabilities, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                             summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
                         file_writer.add_summary(summary, step)
 

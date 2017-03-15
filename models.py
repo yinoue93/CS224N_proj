@@ -93,7 +93,7 @@ class CBOW(object):
 
 	def train(self):
 		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output, labels=self.label_placeholder))
-		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(loss)
+		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(self.loss)
 
 		print("Setup the training mechanism for the CBOW model.....")
 
