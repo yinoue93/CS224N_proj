@@ -2,10 +2,21 @@ import pickle
 import os
 import random
 
+import tensorflow as tf
 from utils_preprocess import *
 
+tf_ver = tf.__version__
+SHERLOCK = (str(tf_ver) == '0.12.1')
+
+# for Sherlock
+if SHERLOCK:
+    DIR_MODIFIER = '/scratch/users/nipuna1'
+# for Azure
+else:
+    DIR_MODIFIER = '/data'
+
 def genWarmStartDataset(data_len, 
-						dataFolder='/data/montreal_plus_local_processed'):
+			dataFolder=os.path.join(DIR_MODIFIER, 'full_dataset/warmup_dataset/checked')):
 	"""
 	Generates metadata and music data for the use in warm starting the RNN models
 
@@ -18,16 +29,15 @@ def genWarmStartDataset(data_len,
 	oneHotHeaders = ('R', 'M', 'L', 'K_key', 'K_mode')
 	otherHeaders = ('len', 'complexity')
 	
-	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
-	music_map = pickle.load(open('/data/global_map_music.p','rb'))
+	meta_map = pickle.load(open(os.path.join(DIR_MODIFIER, 'full_dataset/global_map_meta.p'),'rb'))
+	music_map = pickle.load(open(os.path.join(DIR_MODIFIER, 'full_dataset/global_map_music.p'),'rb'))
 
 	# while loop here, just in case that the file we choose contains characters that
 	# does not appear in the original dataset
 	while True:
-		# pick a random file in checkedFolder
-		checkedFolder = os.path.join(dataFolder, CHECK_DIR)
-		abc_list = os.listdir(checkedFolder)
-		abc_file = os.path.join(checkedFolder, random.choice(abc_list))
+		# pick a random file in dataFolder
+		abc_list = os.listdir(dataFolder)
+		abc_file = os.path.join(dataFolder, random.choice(abc_list))
 
 		meta,music = loadCleanABC(abc_file)
 		warm_str = music[:data_len-1]
