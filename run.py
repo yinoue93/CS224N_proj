@@ -52,23 +52,23 @@ GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
 TEMPERATURE = 1.0
 
 
-
-def create_metrics_op(probabilities, labels, vocabulary_size):
-    last_axis = len(probabilities.get_shape().as_list())
-    prediction = tf.to_int32(tf.argmax(probabilities, axis=last_axis-1))
-
-    difference = labels - prediction
-    zero = tf.constant(0, dtype=tf.int32)
-    boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
-    accuracy = tf.reduce_mean(boolean_difference)
-    tf.summary.scalar('Accuracy', accuracy)
-
-    if SHERLOCK:
-        confusion_matrix = tf_confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
-    else:
-        confusion_matrix = tf.confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
-
-    return prediction, accuracy, confusion_matrix
+#
+# def create_metrics_op(probabilities, labels, vocabulary_size):
+#     last_axis = len(probabilities.get_shape().as_list())
+#     prediction = tf.to_int32(tf.argmax(probabilities, axis=last_axis-1))
+#
+#     difference = labels - prediction
+#     zero = tf.constant(0, dtype=tf.int32)
+#     boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
+#     accuracy = tf.reduce_mean(boolean_difference)
+#     tf.summary.scalar('Accuracy', accuracy)
+#
+#     if SHERLOCK:
+#         confusion_matrix = tf_confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
+#     else:
+#         confusion_matrix = tf.confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
+#
+#     return prediction, accuracy, confusion_matrix
 
 
 
@@ -144,51 +144,68 @@ def save_checkpoint(args, session, saver, i):
     saver.save(session, checkpoint_path, global_step=i)
     saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
 
-def print_model_outputs(accuracy, loss, prediction, output_window_batch, probabilities):
-    print "Average accuracy per batch {0}".format(accuracy)
-    print "Batch Loss: {0}".format(loss)
-    # print "Output Predictions: {0}".format(prediction)
-    # print "Input Labels: {0}".format(output_window_batch)
-    # print "Output Prediction Probabilities: {0}".format(probabilities)
+# def print_model_outputs(accuracy, loss): #, prediction, output_window_batch, probabilities):
+#     print "Average accuracy per batch {0}".format(accuracy)
+#     print "Batch Loss: {0}".format(loss)
+#     # print "Output Predictions: {0}".format(prediction)
+#     # print "Input Labels: {0}".format(output_window_batch)
+#     # print "Output Prediction Probabilities: {0}".format(probabilities)
 
 
-
-def create_feed_dict(args, curModel, input_batch, label_batch, meta_batch,
-                            initial_state_batch, use_meta_batch): # add more for GAN
+def pack_feed_values(args, input_batch, label_batch, meta_batch,
+                            initial_state_batch, use_meta_batch, num_encode, num_decode):
+    packed = [input_batch]
     if args.model == 'seq2seq':
-        feed_dict = {
-            curModel.input_placeholder: input_batch,
-            curModel.meta_placeholder: meta_batch,
-            curModel.label_placeholder: label_batch,
-            curModel.initial_state_placeholder: initial_state_batch,
-            curModel.use_meta_placeholder: use_meta_batch,
-            curModel.num_encode: num_encode,
-            curModel.num_decode: num_decode
-            # attention
-        }
+        packed += [label_batch, meta_batch, initial_state_batch, use_meta_batch, num_encode, num_decode]
+        # + attention?
     elif args.model == 'char':
-        feed_dict = {
-            curModel.input_placeholder: input_batch,
-            curModel.meta_placeholder: meta_batch,
-            curModel.label_placeholder: label_batch,
-            curModel.initial_state_placeholder: initial_state_batch,
-            curModel.use_meta_placeholder: use_meta_batch
-        }
+        packed += [label_batch, meta_batch, initial_state_batch, use_meta_batch]
     elif args.model == 'cbow':
-        feed_dict = {
-            curModel.input_placeholder: input_batch,
-            curModel.label_placeholder: label_batch
-        }
+        new_label_batch = [d[-1] for d in label_batch]
+        packed += [new_label_batch]
     elif args.model == 'gan':
-        feed_dict = {
-            curModel.input_placeholder: input_batch,
-            curModel.meta_placeholder: meta_batch,
-            curModel.label_placeholder: label_batch,
-            curModel.initial_state_placeholder: initial_state_batch,
-            curModel.use_meta_placeholder: use_meta_batch
-            # MORE
-        }
-    return feed_dict
+        packed += [label_batch, meta_batch, initial_state_batch, use_meta_batch]
+        # MORE?
+    return packed
+
+
+# def create_feed_dict(args, curModel, input_batch, label_batch, meta_batch,
+#                             initial_state_batch, use_meta_batch): # add more for GAN
+#     if args.model == 'seq2seq':
+#         feed_dict = {
+#             curModel.input_placeholder: input_batch,
+#             curModel.meta_placeholder: meta_batch,
+#             curModel.label_placeholder: label_batch,
+#             curModel.initial_state_placeholder: initial_state_batch,
+#             curModel.use_meta_placeholder: use_meta_batch,
+#             curModel.num_encode: num_encode,
+#             curModel.num_decode: num_decode
+#             # attention
+#         }
+#     elif args.model == 'char':
+#         feed_dict = {
+#             curModel.input_placeholder: input_batch,
+#             curModel.meta_placeholder: meta_batch,
+#             curModel.label_placeholder: label_batch,
+#             curModel.initial_state_placeholder: initial_state_batch,
+#             curModel.use_meta_placeholder: use_meta_batch
+#         }
+#     elif args.model == 'cbow':
+#         label_batch = [d[-1] for d in label_batch]
+#         feed_dict = {
+#             curModel.input_placeholder: input_batch,
+#             curModel.label_placeholder: label_batch
+#         }
+#     elif args.model == 'gan':
+#         feed_dict = {
+#             curModel.input_placeholder: input_batch,
+#             curModel.meta_placeholder: meta_batch,
+#             curModel.label_placeholder: label_batch,
+#             curModel.initial_state_placeholder: initial_state_batch,
+#             curModel.use_meta_placeholder: use_meta_batch
+#             # MORE
+#         }
+#     return feed_dict
 
 
 
@@ -223,18 +240,19 @@ def run_model(args):
         decoder_prediction_train, decoder_prediction_inference = curModel.create_model(is_train = (args.train=='train'))
         input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, \
              use_meta_placeholder, num_encode, num_decode, train_op, loss_op = curModel.train()
-    
+
     elif args.model == 'char':
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config)
         probabilities_op, logits_op, state_op = curModel.create_model(is_train = (args.train=='train'))
         input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
-    
+
     elif args.model == 'cbow':
         curModel = CBOW(input_size, batch_size, vocabulary_size, args.set_config)
-        probabilities_op, logits_op = curModel.create_model()
-        input_placeholder, label_placeholder, train_op, loss_op = curModel.train()
+        curModel.create_model()
+        curModel.train()
+        curModel.metrics()
 
-    prediction_op, accuracy_op, conf_op = create_metrics_op(probabilities_op, label_placeholder, vocabulary_size)
+    # prediction_op, accuracy_op, conf_op = create_metrics_op(probabilities_op, label_placeholder, vocabulary_size)
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
 
@@ -251,8 +269,8 @@ def run_model(args):
 
     saver = tf.train.Saver(max_to_keep=NUM_EPOCHS)
 
-    tf.summary.scalar('Loss', loss_op)
-    summary_op = tf.summary.merge_all()
+    # tf.summary.scalar('Loss', loss_op)
+    # summary_op = tf.summary.merge_all()
     step = 0
 
     with tf.Session(config=GPU_CONFIG) as session:
@@ -341,22 +359,25 @@ def run_model(args):
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
 
-                        # only take the last element for the CBOW
-                        if args.model == 'cbow':
-                            output_window_batch = [d[-1] for d in output_window_batch]
-
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
 
-                        feed_dict = create_feed_dict(args, curModel, input_window_batch,
+                        feed_values = pack_feed_values(args, input_window_batch,
                                                     output_window_batch, meta_batch,
-                                                    initial_state_batch, True)
+                                                    initial_state_batch, True,
+                                                    None, None)
+                        # feed_dict = create_feed_dict(args, curModel, input_window_batch,
+                        #                             output_window_batch, meta_batch,
+                        #                             initial_state_batch, True)
 
-                        if args.train == "train":
-                            #_, summary, loss, probabilities, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                            _, summary, loss, probabilities, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                        else:
-                            #summary, loss, probabilities, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                            summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                        # if args.train == "train":
+                        #     #_, summary, loss, probabilities, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                        #     _, summary, loss, probabilities, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                        # else:
+                        #     #summary, loss, probabilities, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+                        #     summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
+
+                        summary, conf, accuracy = curModel.run(args, session, feed_values)
+
                         file_writer.add_summary(summary, step)
 
                         # Update confusion matrix
@@ -366,8 +387,8 @@ def run_model(args):
                         if args.train == "test" or args.train == 'dev':
                             batch_accuracies.append(accuracy)
 
-                        # Print out some stats
-                        print_model_outputs(accuracy, loss, prediction, output_window_batch, probabilities)
+                        # # Print out some stats
+                        # print_model_outputs(accuracy, loss)#, prediction, output_window_batch, probabilities)
 
                         # Processed another batch
                         step += 1
@@ -414,9 +435,9 @@ def run_gan(args):
     # cell_type = 'rnn'
 
     gan_label_size = len(meta_map['R'])
-    curModel = GenAdversarialNet(input_size, input_size, gan_label_size, 
-                                 gan_label_size, args.train=='train', cell_type, 
-                                 args.set_config, use_lrelu=True, use_batchnorm=False, 
+    curModel = GenAdversarialNet(input_size, input_size, gan_label_size,
+                                 gan_label_size, args.train=='train', cell_type,
+                                 args.set_config, use_lrelu=True, use_batchnorm=False,
                                  dropout=None)
 
     probabilities_real_op, probabilities_fake_op = curModel.create_model()

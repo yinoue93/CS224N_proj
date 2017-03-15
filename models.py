@@ -70,13 +70,12 @@ class CBOW(object):
 		self.input_size = input_size
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
-		self.input_placeholder = tf.placeholder(tf.int32, shape=[None, self.input_size])
-		self.label_placeholder = tf.placeholder(tf.int32, shape=[None])
+		self.input_placeholder = tf.placeholder(tf.int32, shape=[None, self.input_size], name="Inputs")
+		self.label_placeholder = tf.placeholder(tf.int32, shape=[None], name="Labels")
 		self.embeddings = tf.Variable(tf.random_uniform([self.config.vocab_size,
 								self.config.embed_size], -1.0, 1.0))
 
 		print("Completed Initializing the CBOW Model.....")
-
 
 	def create_model(self):
 		weight = tf.get_variable("Wout", shape=[self.config.embed_size, self.config.vocab_size],
@@ -86,19 +85,56 @@ class CBOW(object):
 		word_vec =  tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
 		average_embedding = tf.reduce_sum(word_vec, reduction_indices=1)
 
-		self.output = tf.add(tf.matmul(average_embedding, weight), bias)
-		self.pred = tf.nn.softmax(self.output)
+		self.logits_op = tf.add(tf.matmul(average_embedding, weight), bias)
+		self.probabilities_op = tf.nn.softmax(self.logits_op)
 		print("Built the CBOW Model.....")
 
-		return self.pred, self.output
+		# return self.probabilities_op, self.logits_op
 
 	def train(self):
-		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output, labels=self.label_placeholder))
-		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(self.loss)
+		self.loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits_op, labels=self.label_placeholder))
+		tf.summary.scalar('Loss', self.loss_op)
+		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(self.loss_op)
 
 		print("Setup the training mechanism for the CBOW model.....")
 
-		return self.input_placeholder, self.label_placeholder, self.train_op, self.loss
+		# return self.input_placeholder, self.label_placeholder, self.train_op, self.loss_op
+
+	def metrics(self):
+		last_axis = len(self.probabilities_op.get_shape().as_list())
+		self.prediction_op = tf.to_int32(tf.argmax(self.probabilities_op, axis=last_axis-1))
+		difference = self.label_placeholder - self.prediction_op
+		zero = tf.constant(0, dtype=tf.int32)
+		boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
+		self.accuracy_op = tf.reduce_mean(boolean_difference)
+		tf.summary.scalar('Accuracy', self.accuracy_op)
+
+		self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
+
+		# return self.prediction_op, self.accuracy_op, self.confusion_matrix_op
+
+	def run(self, args, session, feed_values):
+		self.summary_op = tf.summary.merge_all()
+
+		input_batch = feed_values[0]
+		label_batch = feed_values[1]
+		feed_dict = {
+			self.input_placeholder: input_batch,
+			self.label_placeholder: label_batch
+		}
+
+		if args.train == "train":
+			_, summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.train_op, self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
+		else: # Sample case not necessary b/c function will only be called during normal runs
+			summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
+
+		print "Average accuracy per batch {0}".format(accuracy)
+		print "Batch Loss: {0}".format(loss)
+		# print "Output Predictions: {0}".format(prediction)
+		# print "Output Prediction Probabilities: {0}".format(probabilities)
+
+		return summary, confusion_matrix, accuracy
+
 
 
 
@@ -308,7 +344,7 @@ class Seq2SeqRNN(object):
             self.decoder_context_state_inference = seq2seq.dynamic_rnn_decoder(cell=self.cell,
                     decoder_fn=decoder_fn_inference, time_major=True, scope=scope)
 
-                
+
 			self.decoder_prediction_inference = tf.argmax(self.decoder_logits_inference, axis=-1, name='decoder_prediction_inference')
 
 			print("Built the Seq2Seq RNN Model...")
@@ -513,7 +549,3 @@ class Discriminator(object):
 # 		return self.input_placeholder, self.label_placeholder, \
 # 				self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
 # 				 self.rnn_use_meta_placeholder, self.train_op_d, self.train_op_gan
-
-
-
-
