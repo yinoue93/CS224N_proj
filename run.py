@@ -52,33 +52,12 @@ GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
 TEMPERATURE = 1.0
 
 
-#
-# def create_metrics_op(probabilities, labels, vocabulary_size):
-#     last_axis = len(probabilities.get_shape().as_list())
-#     prediction = tf.to_int32(tf.argmax(probabilities, axis=last_axis-1))
-#
-#     difference = labels - prediction
-#     zero = tf.constant(0, dtype=tf.int32)
-#     boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
-#     accuracy = tf.reduce_mean(boolean_difference)
-#     tf.summary.scalar('Accuracy', accuracy)
-#
-#     if SHERLOCK:
-#         confusion_matrix = tf_confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
-#     else:
-#         confusion_matrix = tf.confusion_matrix(tf.reshape(labels, [-1]), tf.reshape(prediction, [-1]), num_classes=vocabulary_size, dtype=tf.int32)
-#
-#     return prediction, accuracy, confusion_matrix
-
-
-
 def sample_with_temperature(logits, temperature):
     flattened_logits = logits.flatten()
     unnormalized = np.exp((flattened_logits - np.max(flattened_logits)) / temperature)
     probabilities = unnormalized / float(np.sum(unnormalized))
     sample = np.random.choice(len(probabilities), p=probabilities)
     return sample
-
 
 
 def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
@@ -115,7 +94,6 @@ def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], an
     fig.savefig('confusion_matrix_epoch{0}.png'.format(epoch))
 
 
-
 def get_checkpoint(args, session, saver):
     # Checkpoint
     found_ckpt = False
@@ -138,18 +116,10 @@ def get_checkpoint(args, session, saver):
     return i_stopped, found_ckpt
 
 
-
 def save_checkpoint(args, session, saver, i):
     checkpoint_path = os.path.join(args.ckpt_dir, 'model.ckpt')
     saver.save(session, checkpoint_path, global_step=i)
     saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
-
-# def print_model_outputs(accuracy, loss): #, prediction, output_window_batch, probabilities):
-#     print "Average accuracy per batch {0}".format(accuracy)
-#     print "Batch Loss: {0}".format(loss)
-#     # print "Output Predictions: {0}".format(prediction)
-#     # print "Input Labels: {0}".format(output_window_batch)
-#     # print "Output Prediction Probabilities: {0}".format(probabilities)
 
 
 def pack_feed_values(args, input_batch, label_batch, meta_batch,
@@ -167,46 +137,6 @@ def pack_feed_values(args, input_batch, label_batch, meta_batch,
         packed += [label_batch, meta_batch, initial_state_batch, use_meta_batch]
         # MORE?
     return packed
-
-
-# def create_feed_dict(args, curModel, input_batch, label_batch, meta_batch,
-#                             initial_state_batch, use_meta_batch): # add more for GAN
-#     if args.model == 'seq2seq':
-#         feed_dict = {
-#             curModel.input_placeholder: input_batch,
-#             curModel.meta_placeholder: meta_batch,
-#             curModel.label_placeholder: label_batch,
-#             curModel.initial_state_placeholder: initial_state_batch,
-#             curModel.use_meta_placeholder: use_meta_batch,
-#             curModel.num_encode: num_encode,
-#             curModel.num_decode: num_decode
-#             # attention
-#         }
-#     elif args.model == 'char':
-#         feed_dict = {
-#             curModel.input_placeholder: input_batch,
-#             curModel.meta_placeholder: meta_batch,
-#             curModel.label_placeholder: label_batch,
-#             curModel.initial_state_placeholder: initial_state_batch,
-#             curModel.use_meta_placeholder: use_meta_batch
-#         }
-#     elif args.model == 'cbow':
-#         label_batch = [d[-1] for d in label_batch]
-#         feed_dict = {
-#             curModel.input_placeholder: input_batch,
-#             curModel.label_placeholder: label_batch
-#         }
-#     elif args.model == 'gan':
-#         feed_dict = {
-#             curModel.input_placeholder: input_batch,
-#             curModel.meta_placeholder: meta_batch,
-#             curModel.label_placeholder: label_batch,
-#             curModel.initial_state_placeholder: initial_state_batch,
-#             curModel.use_meta_placeholder: use_meta_batch
-#             # MORE
-#         }
-#     return feed_dict
-
 
 
 def run_model(args):
@@ -243,8 +173,9 @@ def run_model(args):
 
     elif args.model == 'char':
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config)
-        probabilities_op, logits_op, state_op = curModel.create_model(is_train = (args.train=='train'))
-        input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
+        curModel.create_model(is_train = (args.train=='train'))
+        curModel.train()
+        curModel.metrics()
 
     elif args.model == 'cbow':
         curModel = CBOW(input_size, batch_size, vocabulary_size, args.set_config)
@@ -365,16 +296,6 @@ def run_model(args):
                                                     output_window_batch, meta_batch,
                                                     initial_state_batch, True,
                                                     None, None)
-                        # feed_dict = create_feed_dict(args, curModel, input_window_batch,
-                        #                             output_window_batch, meta_batch,
-                        #                             initial_state_batch, True)
-
-                        # if args.train == "train":
-                        #     #_, summary, loss, probabilities, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                        #     _, summary, loss, probabilities, state, prediction, accuracy, conf = session.run([train_op, summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                        # else:
-                        #     #summary, loss, probabilities, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
-                        #     summary, loss, probabilities, state, prediction, accuracy, conf = session.run([summary_op, loss_op, probabilities_op, state_op, prediction_op, accuracy_op, conf_op], feed_dict=feed_dict)
 
                         summary, conf, accuracy = curModel.run(args, session, feed_values)
 
@@ -386,9 +307,6 @@ def run_model(args):
                         # Record batch accuracies for test code
                         if args.train == "test" or args.train == 'dev':
                             batch_accuracies.append(accuracy)
-
-                        # # Print out some stats
-                        # print_model_outputs(accuracy, loss)#, prediction, output_window_batch, probabilities)
 
                         # Processed another batch
                         step += 1

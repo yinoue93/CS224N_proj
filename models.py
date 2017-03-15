@@ -89,16 +89,12 @@ class CBOW(object):
 		self.probabilities_op = tf.nn.softmax(self.logits_op)
 		print("Built the CBOW Model.....")
 
-		# return self.probabilities_op, self.logits_op
-
 	def train(self):
 		self.loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits_op, labels=self.label_placeholder))
 		tf.summary.scalar('Loss', self.loss_op)
 		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(self.loss_op)
 
 		print("Setup the training mechanism for the CBOW model.....")
-
-		# return self.input_placeholder, self.label_placeholder, self.train_op, self.loss_op
 
 	def metrics(self):
 		last_axis = len(self.probabilities_op.get_shape().as_list())
@@ -110,8 +106,6 @@ class CBOW(object):
 		tf.summary.scalar('Accuracy', self.accuracy_op)
 
 		self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
-
-		# return self.prediction_op, self.accuracy_op, self.confusion_matrix_op
 
 	def run(self, args, session, feed_values):
 		self.summary_op = tf.summary.merge_all()
@@ -209,7 +203,7 @@ class CharRNN(object):
 		                            lambda: self.initial_state_placeholder)
 			initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
 
-		rnn_output, state = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
+		rnn_output, self.state_op = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
 
 		decode_var = tf.Variable(tf.random_uniform([self.config.hidden_size, self.config.vocab_size],
 										 0, 10, dtype=tf.float32, seed=3), name='char_decode')
@@ -218,28 +212,66 @@ class CharRNN(object):
 		decode_list = []
 		for i in xrange(self.input_size):
 			decode_list.append(tf.matmul(rnn_output[:, i, :], decode_var) + decode_bias)
-		self.output = tf.stack(decode_list, axis=1)
-		self.pred = tf.nn.softmax(self.output)
+		self.logits_op = tf.stack(decode_list, axis=1)
+		self.probabilities_op = tf.nn.softmax(self.logits_op)
 
 		print("Built the Char RNN Model...")
 
-		return self.pred, self.output, state
-
-
 
 	def train(self, max_norm=5, op='adam'):
-		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output, labels=self.label_placeholder))
+		self.loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits_op, labels=self.label_placeholder))
 		tvars = tf.trainable_variables()
 
 		# Gradient clipping
-		grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars),max_norm)
+		grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss_op, tvars),max_norm)
 		optimizer = tf.train.AdamOptimizer(self.config.lr)
 		self.train_op = optimizer.apply_gradients(zip(grads, tvars))
 
 		print("Setup the training mechanism for the Char RNN Model...")
 
-		return self.input_placeholder, self.label_placeholder, self.meta_placeholder, self.initial_state_placeholder,\
-			 self.use_meta_placeholder, self.train_op, self.loss
+
+	def metrics(self):
+		# Same function, did not make a general one b/c need to store _ops within class
+		last_axis = len(self.probabilities_op.get_shape().as_list())
+		self.prediction_op = tf.to_int32(tf.argmax(self.probabilities_op, axis=last_axis-1))
+		difference = self.label_placeholder - self.prediction_op
+		zero = tf.constant(0, dtype=tf.int32)
+		boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
+		self.accuracy_op = tf.reduce_mean(boolean_difference)
+		tf.summary.scalar('Accuracy', self.accuracy_op)
+
+		self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
+
+
+	def run(self, args, session, feed_values):
+		self.summary_op = tf.summary.merge_all()
+
+		input_batch = feed_values[0]
+		label_batch = feed_values[1]
+		meta_batch = feed_values[2]
+		initial_state_batch = feed_values[3]
+		use_meta_batch = feed_values[4]
+
+		feed_dict = {
+			self.input_placeholder: input_batch,
+			self.label_placeholder: label_batch,
+			self.meta_placeholder: meta_batch,
+			self.initial_state_placeholder: initial_state_batch,
+			self.use_meta_placeholder: use_meta_batch
+		}
+
+		if args.train == "train":
+			_, summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.train_op, self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
+		else: # Sample case not necessary b/c function will only be called during normal runs
+			summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
+
+		print "Average accuracy per batch {0}".format(accuracy)
+		print "Batch Loss: {0}".format(loss)
+		# print "Output Predictions: {0}".format(prediction)
+		# print "Output Prediction Probabilities: {0}".format(probabilities)
+
+		return summary, confusion_matrix, accuracy
+
 
 
 
