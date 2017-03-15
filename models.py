@@ -247,6 +247,10 @@ class Seq2SeqRNN(object):
 	# Based on the example model presented in https://github.com/ematvey/tensorflow-seq2seq-tutorials/blob/master/model_new.py
 	def create_model(self, is_train):
 		with tf.variable_scope("Seq2Seq") as scope:
+
+			def output_fn(outputs):
+				return tf.contrib.layers.linear(outputs, self.config.vocab_size, scope=scope)
+
 			if is_train:
 				self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=self.config.keep_prob)
 
@@ -275,7 +279,7 @@ class Seq2SeqRNN(object):
 
 			attention_keys, attention_values, attention_score_fn, \
 					attention_construct_fn = seq2seq.prepare_attention( attention_states=attention_states,
-										attention_option=self.attention_option, num_units=self.num_decode)
+										attention_option=self.attention_option, num_units=self.config.hidden_size)
 
 			decoder_fn_train = seq2seq.attention_decoder_fn_train( encoder_state=self.encoder_state,
 			            attention_keys=attention_keys, attention_values=attention_values,
@@ -286,12 +290,12 @@ class Seq2SeqRNN(object):
 			            attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
 			            attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
 			            start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
-			            maximum_length=self.num_encode + 3, num_decoder_symbols=self.config.vocab_size)
+			            maximum_length=tf.reduce_max(self.num_encode) + 3, num_decoder_symbols=self.config.vocab_size)
 
 			self.decoder_outputs_train, self.decoder_state_train, \
 			self.decoder_context_state_train =  seq2seq.dynamic_rnn_decoder( cell=self.cell,
 			            decoder_fn=decoder_fn_train, inputs=self.decoder_inputs_embedded,
-			            sequence_length=self.decoder_train_length, time_major=True, scope=scope)
+			            sequence_length=self.num_decode, time_major=True, scope=scope)
 
 			self.decoder_logits_train = tf.contrib.layers.linear(self.decoder_outputs_train, self.config.vocab_size, scope=scope)
 			self.decoder_prediction_train = tf.argmax(self.decoder_logits_train, axis=-1, name='decoder_prediction_train')
