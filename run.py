@@ -3,7 +3,7 @@ import numpy as np
 import os
 import sys
 from argparse import ArgumentParser
-from models import CharRNN, Config, GenAdversarialNet
+from models import CharRNN, Config, Seq2SeqRNN
 # from utils_preprocess import hdf52dict
 import pickle
 import reader
@@ -161,8 +161,8 @@ def create_feed_dict(args, curModel, input_batch, label_batch, meta_batch,
             curModel.meta_placeholder: meta_batch,
             curModel.label_placeholder: label_batch,
             curModel.initial_state_placeholder: initial_state_batch,
-            curModel.use_meta_placeholder: use_meta_batch
-            curModel.num_encode: num_encode
+            curModel.use_meta_placeholder: use_meta_batch,
+            curModel.num_encode: num_encode,
             curModel.num_decode: num_decode
             # attention
         }
@@ -207,6 +207,8 @@ def run_model(args):
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
 
+    start_encode = vocabulary["<start>"]
+    end_encode = vocabulary["<end>"]
     # Getting meta mapping:
     meta_map = pickle.load(open(META_DATA, 'rb'))
 
@@ -215,9 +217,10 @@ def run_model(args):
     # cell_type = 'rnn'
 
     if args.model == 'seq2seq':
-        curModel = Seq2SeqRNN(input_size, label_size, cell_type, args.set_config)
-        decoder_prediction_train, decoder_prediction_inference = curModel.create_model()
-        
+        curModel = Seq2SeqRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config, start_encode, end_encode)
+        decoder_prediction_train, decoder_prediction_inference = curModel.create_model(is_train = (args.train=='train'))
+        input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, \
+             use_meta_placeholder, num_encode, num_decode, train_op, loss_op = curModel.train()
     
     elif args.model == 'char':
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config)
