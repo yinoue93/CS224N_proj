@@ -32,7 +32,7 @@ class Config(object):
 
 		self.vocab_size = 81
 		# self.meta_embed = self.songtype
-		self.meta_embed = 100 #self.songtype/2
+		self.meta_embed = 1#00 #self.songtype/2
 		self.hidden_size = self.meta_embed*5 #+ 2
 		self.embedding_dims = self.vocab_size*3/4
 		self.vocab_meta = self.songtype + self.sign + self.notesize+ self.flats + self.mode
@@ -107,15 +107,18 @@ class CBOW(object):
 
 		self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
 
-	def run(self, args, session, feed_values):
-		self.summary_op = tf.summary.merge_all()
-
+	def _feed_dict(self, feed_values):
 		input_batch = feed_values[0]
 		label_batch = feed_values[1]
 		feed_dict = {
 			self.input_placeholder: input_batch,
 			self.label_placeholder: label_batch
 		}
+		return feed_dict
+
+	def run(self, args, session, feed_values):
+		self.summary_op = tf.summary.merge_all()
+		feed_dict = self._feed_dict(feed_values)
 
 		if args.train == "train":
 			_, summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.train_op, self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
@@ -128,6 +131,13 @@ class CBOW(object):
 		# print "Output Prediction Probabilities: {0}".format(probabilities)
 
 		return summary, confusion_matrix, accuracy
+
+	def sample(self, session, feed_values):
+		feed_dict = self._feed_dict(feed_values)
+
+		logits = session.run(self.logits_op, feed_dict=feed_dict)
+		return logits, np.zeros((1, 1)) # dummy value
+
 
 
 
@@ -243,9 +253,7 @@ class CharRNN(object):
 		self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
 
 
-	def run(self, args, session, feed_values):
-		self.summary_op = tf.summary.merge_all()
-
+	def _feed_dict(self, feed_values):
 		input_batch = feed_values[0]
 		label_batch = feed_values[1]
 		meta_batch = feed_values[2]
@@ -260,6 +268,13 @@ class CharRNN(object):
 			self.use_meta_placeholder: use_meta_batch
 		}
 
+		return feed_dict
+
+
+	def run(self, args, session, feed_values):
+		self.summary_op = tf.summary.merge_all()
+		feed_dict = self._feed_dict(feed_values)
+
 		if args.train == "train":
 			_, summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.train_op, self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
 		else: # Sample case not necessary b/c function will only be called during normal runs
@@ -271,6 +286,15 @@ class CharRNN(object):
 		# print "Output Prediction Probabilities: {0}".format(probabilities)
 
 		return summary, confusion_matrix, accuracy
+
+
+	def sample(self, session, feed_values):
+		feed_dict = self._feed_dict(feed_values)
+
+		logits, state = session.run([self.logits_op, self.state_op], feed_dict=feed_dict)
+		return logits, state
+
+
 
 
 

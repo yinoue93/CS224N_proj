@@ -45,7 +45,7 @@ SUMMARY_DIR = DIR_MODIFIER + '/summary'
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
 GPU_CONFIG = tf.ConfigProto()
-GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
+GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
 
 # For T --> inf, p is uniform. Easy to sample from!
 # For T --> 0, p "concentrates" on arg max. Hard to sample from!
@@ -183,8 +183,6 @@ def run_model(args):
         curModel.train()
         curModel.metrics()
 
-    # prediction_op, accuracy_op, conf_op = create_metrics_op(probabilities_op, label_placeholder, vocabulary_size)
-
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
 
     print "Reading in {0}-set filenames.".format(args.train)
@@ -197,11 +195,7 @@ def run_model(args):
     dateset_filenames = reader.abc_filenames(dataset_dir)
 
     global_step = tf.Variable(0, trainable=False, name='global_step') #tf.contrib.framework.get_or_create_global_step()
-
     saver = tf.train.Saver(max_to_keep=NUM_EPOCHS)
-
-    # tf.summary.scalar('Loss', loss_op)
-    # summary_op = tf.summary.merge_all()
     step = 0
 
     with tf.Session(config=GPU_CONFIG) as session:
@@ -230,7 +224,9 @@ def run_model(args):
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
 
             warm_meta_array = [warm_meta[:] for idx in xrange(3)]
+            # Change Key
             warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
+            # Change Number of Flats/Sharps
             warm_meta_array[1][3] = np.random.choice(11)
 
             print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
@@ -250,9 +246,11 @@ def run_model(args):
                     else:
                         initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
 
-                    feed_dict = create_feed_dict(args, curModel, [[c]], [[0]], [meta],
-                                                initial_state_sample, (j == 0))
-                    loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
+                    feed_values = pack_feed_values(args, [[c]],
+                                                [[0]], [meta],
+                                                initial_state_sample, (j == 0),
+                                                None, None)
+                    logits, state = curModel.sample(session, feed_values)
 
                 # Sample
                 sampled_character = sample_with_temperature(logits, TEMPERATURE)
@@ -264,11 +262,12 @@ def run_model(args):
                     else:
                         initial_state_sample = state[0]
 
-                    feed_dict = create_feed_dict(args, curModel, [[sampled_character]],
+                    feed_values = pack_feed_values(args, [[sampled_character]],
                                                 [[0]], [np.zeros_like(meta)],
-                                                initial_state_sample, False)
+                                                initial_state_sample, False,
+                                                None, None)
+                    logits, state = curModel.sample(session, feed_values)
 
-                    loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
                     sampled_character = sample_with_temperature(logits, TEMPERATURE)
                     generated.append(sampled_character)
 
@@ -376,7 +375,7 @@ def run_gan(args):
 
     global_step = tf.Variable(0, trainable=False, name='global_step') #tf.contrib.framework.get_or_create_global_step()
 
-    saver = tf.train.Saver(max_to_keep=NUM_EPOCHS)
+    saver = tf.train.Saver(tf.all_variables(), max_to_keep=NUM_EPOCHS)
 
     tf.summary.scalar('Loss', loss_op)
     summary_op = tf.summary.merge_all()
@@ -556,10 +555,10 @@ def main(_):
     else:
         run_model(args)
 
-    # if args.train != "sample":
-    #     if tf.gfile.Exists(SUMMARY_DIR):
-    #         tf.gfile.DeleteRecursively(SUMMARY_DIR)
-    #     tf.gfile.MakeDirs(SUMMARY_DIR)
+    if args.train != "sample":
+        if tf.gfile.Exists(SUMMARY_DIR):
+            tf.gfile.DeleteRecursively(SUMMARY_DIR)
+        tf.gfile.MakeDirs(SUMMARY_DIR)
 
 if __name__ == "__main__":
     tf.app.run()
