@@ -32,7 +32,7 @@ class Config(object):
 
 		self.vocab_size = 81
 		# self.meta_embed = self.songtype
-		self.meta_embed = 1#00 #self.songtype/2
+		self.meta_embed = 100 #self.songtype/2
 		self.hidden_size = self.meta_embed*5 #+ 2
 		self.embedding_dims = self.vocab_size*3/4
 		self.vocab_meta = self.songtype + self.sign + self.notesize+ self.flats + self.mode
