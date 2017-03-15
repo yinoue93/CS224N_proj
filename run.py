@@ -3,7 +3,7 @@ import numpy as np
 import os
 import sys
 from argparse import ArgumentParser
-from models import CharRNN, Config, GenAdversarialNet
+from models import CharRNN, Config, GenAdversarialNet, CBOW
 # from utils_preprocess import hdf52dict
 import pickle
 import reader
@@ -45,7 +45,7 @@ SUMMARY_DIR = DIR_MODIFIER + '/summary'
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
 GPU_CONFIG = tf.ConfigProto()
-GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
+GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.5
 
 # For T --> inf, p is uniform. Easy to sample from!
 # For T --> 0, p "concentrates" on arg max. Hard to sample from!
@@ -138,11 +138,10 @@ def get_checkpoint(args, session, saver):
 
 
 
-def save_checkpoint(session, saver, i):
+def save_checkpoint(args, session, saver, i):
     checkpoint_path = os.path.join(args.ckpt_dir, 'model.ckpt')
     saver.save(session, checkpoint_path, global_step=i)
-
-
+    saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
 
 def print_model_outputs(accuracy, loss, prediction, output_window_batch, probabilities):
     print "Average accuracy per batch {0}".format(accuracy)
@@ -200,8 +199,10 @@ def run_model(args):
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
-    vocabulary_keys = vocabulary.keys() + ["<start>", "<end>"]
-    vocabulary = dict(zip(vocabulary_keys, range(len(vocabulary_keys))))
+    vocab_sz = len(vocabulary)
+    vocabulary["<start>"] = vocab_sz
+    vocabulary["<end>"] = vocab_sz+1
+
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
 
@@ -221,7 +222,7 @@ def run_model(args):
         input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, use_meta_placeholder, train_op, loss_op = curModel.train()
     
     elif args.model == 'cbow':
-        curModel = CBOW(input_size, label_size, batch_size, vocab_size, args.set_config)
+        curModel = CBOW(input_size, batch_size, vocabulary_size, args.set_config)
         probabilities_op, logits_op = curModel.create_model()
         input_placeholder, label_placeholder, train_op, loss_op = curModel.train()
 
@@ -358,7 +359,7 @@ def run_model(args):
 
                 if args.train == "train":
                     # Checkpoint model - every epoch
-                    save_checkpoint(session, saver, i)
+                    save_checkpoint(args, session, saver, i)
                     confusion_suffix = i
                 else: # dev or test (NOT sample)
                     test_accuracy = np.mean(batch_accuracies)
@@ -374,7 +375,6 @@ def run_model(args):
 
                 # Plot Confusion Matrix
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix)#, characters_remove=['|', '2'])
-
 
 def run_gan(args):
     input_size = 1 if args.train == "sample" else 25
@@ -602,10 +602,10 @@ def main(_):
     else:
         run_model(args)
 
-    if args.train != "sample":
-        if tf.gfile.Exists(SUMMARY_DIR):
-            tf.gfile.DeleteRecursively(SUMMARY_DIR)
-        tf.gfile.MakeDirs(SUMMARY_DIR)
+    # if args.train != "sample":
+    #     if tf.gfile.Exists(SUMMARY_DIR):
+    #         tf.gfile.DeleteRecursively(SUMMARY_DIR)
+    #     tf.gfile.MakeDirs(SUMMARY_DIR)
 
 if __name__ == "__main__":
     tf.app.run()

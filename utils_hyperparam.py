@@ -3,6 +3,7 @@ import pickle
 import os
 import datetime
 import re
+import tensorflow as tf
 
 from argparse import ArgumentParser
 
@@ -10,7 +11,17 @@ import numpy as np
 
 TMP_HYPER_PICKLE = 'tmp_hyperparam.p'
 OUTPUT_FILE = 'grid_search_result.txt'
-DEV_CKPT_DIR = '/data/dev_ckpt'
+
+
+tf_ver = tf.__version__
+SHERLOCK = (str(tf_ver) == '0.12.1')
+
+if SHERLOCK:
+    DIR_MODIFIER = '/scratch/users/nipuna1'
+else:
+    DIR_MODIFIER = '/data'
+
+DEV_CKPT_DIR = DIR_MODIFIER + '/dev_ckpt'
 
 def parseHyperTxt(paramTxtF):
 	nameList = []
@@ -20,11 +31,11 @@ def parseHyperTxt(paramTxtF):
 		count = 0
 		for line in paramF:
 			if count==0:
-				modelType = line.replace('\n','')
+				modelType = line.replace('\n','').replace('\r','')
 				count += 1
 				continue
 			elif count==1:
-				num_epochs = int(line.replace('\n',''))
+				num_epochs = int(line.replace('\n','').replace('\r',''))
 				count += 1
 				continue
 
@@ -58,6 +69,7 @@ def runHyperparam(paramTxtF):
 
 	print '[INFO] There are %d combinations of hyperparameters...' %len(param_all_combos)
 
+	count = 0
 	for param in param_all_combos:
 		# create the param list and pickle it to TMP_HYPER_PICKLE
 		paramDict = {}
@@ -85,10 +97,12 @@ def runHyperparam(paramTxtF):
 		print '='*80
 
 		# train the model using the new hyperparameters
+		print '-'*30 + 'TRAINING' + '-'*30
 		cmd = 'python run.py -p train -o -ckpt %s -m %s -e %d -c %s' %(DEV_CKPT_DIR, modelType, num_epochs, TMP_HYPER_PICKLE)
 		os.system(cmd)
 
 		# test the model on the dev set
+		print '-'*30 + 'TESTING DEV' + '-'*30
 		cmd = 'python run.py -p dev -ckpt %s -m %s -c %s' %(DEV_CKPT_DIR, modelType, TMP_HYPER_PICKLE)
 		os.system(cmd)
 

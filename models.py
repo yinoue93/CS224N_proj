@@ -64,14 +64,13 @@ class Config(object):
 
 class CBOW(object):
 
-	def __init__(self, input_size, label_size, batch_size, vocab_size, hyperparam_path):
+	def __init__(self, input_size, batch_size, vocab_size, hyperparam_path):
 		self.config = Config(hyperparam_path)
 		self.input_size = input_size
-		self.label_size = label_size
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
 		self.input_placeholder = tf.placeholder(tf.int32, shape=[None, self.input_size])
-		self.label_placeholder = tf.placeholder(tf.int32, shape=[None, self.label_size])
+		self.label_placeholder = tf.placeholder(tf.int32, shape=[None])
 		self.embeddings = tf.Variable(tf.random_uniform([self.config.vocab_size,
 								self.config.embed_size], -1.0, 1.0))
 
@@ -85,6 +84,7 @@ class CBOW(object):
 
 		word_vec =  tf.nn.embedding_lookup(self.embeddings, self.input_placeholder)
 		average_embedding = tf.reduce_sum(word_vec, reduction_indices=1)
+
 		self.output = tf.add(tf.matmul(average_embedding, weight), bias)
 		self.pred = tf.nn.softmax(self.output)
 		print("Built the CBOW Model.....")
@@ -92,7 +92,7 @@ class CBOW(object):
 		return self.pred, self.output
 
 	def train(self):
-		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred, labels=self.label_placeholder))
+		self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output, labels=self.label_placeholder))
 		self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(loss)
 
 		print("Setup the training mechanism for the CBOW model.....")
@@ -138,10 +138,10 @@ class CharRNN(object):
 
 	def create_model(self, is_train=True):
 		if is_train:
-			self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=1.0)
+			self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=self.config.keep_prob)
 		rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
 
-		
+
 
 		# Embedding lookup for ABC format characters
 		embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
