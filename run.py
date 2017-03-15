@@ -162,6 +162,8 @@ def create_feed_dict(args, curModel, input_batch, label_batch, meta_batch,
             curModel.label_placeholder: label_batch,
             curModel.initial_state_placeholder: initial_state_batch,
             curModel.use_meta_placeholder: use_meta_batch
+            curModel.num_encode: num_encode
+            curModel.num_decode: num_decode
             # attention
         }
     elif args.model == 'char':
@@ -214,6 +216,8 @@ def run_model(args):
 
     if args.model == 'seq2seq':
         curModel = Seq2SeqRNN(input_size, label_size, cell_type, args.set_config)
+        decoder_prediction_train, decoder_prediction_inference = curModel.create_model()
+        
     
     elif args.model == 'char':
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config)

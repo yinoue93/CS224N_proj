@@ -10,6 +10,7 @@ import numpy as np
 import sys
 import os
 import logging
+import math
 
 import utils_hyperparam
 
@@ -29,7 +30,7 @@ class Config(object):
 		self.complex = 1
 		self.max_length = 8
 
-		self.vocab_size = 124
+		self.vocab_size = 81
 		# self.meta_embed = self.songtype
 		self.meta_embed = 100 #self.songtype/2
 		self.hidden_size = self.meta_embed*5 #+ 2
@@ -206,93 +207,114 @@ class CharRNN(object):
 
 
 
-# class Seq2SeqRNN(object):
+class Seq2SeqRNN(object):
 
-# 	def __init__(self,input_size, label_size, cell_type):
-# 		self.cell_type = cell_type
-# 		self.config = Config()
+	def __init__(self,input_size, label_size,batch_size, vocab_size, cell_type, hyperparam_path, start_encode, end_encode):
+		self.input_size = input_size
+		self.label_size = label_size
+		self.cell_type = cell_type
+		self.config = Config(hyperparam_path)
+		self.config.batch_size = batch_size
+		self.config.vocab_size = vocab_size
 
-# 		if cell_type == 'rnn':
-# 			self.cell = rnn.BasicRNNCell(self.config.hidden_size)
-# 			self.initial_state = self.cell.zero_state(batch_size)
-# 		elif cell_type == 'gru':
-# 			self.cell = rnn.GRUCell(self.config.hidden_size)
-# 			self.initial_state = self.cell.zero_state(batch_size)
-# 		elif cell_type == 'lstm':
-# 			self.cell = rnn.BasicLSTMCell(self.config.hidden_size)
-# 			self.initial_state = self.cell.zero_state(batch_size)
+		input_shape = (None,) + tuple([input_size])
+		output_shape = (None,) + tuple([label_size])
 
-# 		input_shape = (None,) + tuple([max_length,input_size])
-# 		output_shape = (None,) + tuple([max_length,label_size])
-# 		self.input_placeholder = tf.placeholder(tf.float32, shape=input_shape, name='Input')
-# 		self.label_placeholder = tf.placeholder(tf.float32, shape=output_shape, name='Output')
+		self.input_placeholder = tf.placeholder(tf.int32, shape=input_shape, name='Input')
+		self.label_placeholder = tf.placeholder(tf.int32, shape=output_shape, name='Output')
+		self.meta_placeholder = tf.placeholder(tf.int32, shape=[None, self.config.num_meta], name='Meta')
+		self.use_meta_placeholder = tf.placeholder(tf.bool, name='State_Initialization_Bool')
+		self.num_encode = tf.placeholder(tf.int32, shape=(None,) name='Num_encode')
+		self.num_decode = tf.placeholder(tf.int32, shape=(None,) name='Num_decode')
 
-# 		# Seq2Seq specific initializers
-# 		self.num_encode = num_encode
-# 		self.num_decode = num_decode
-# 		self.num_meta = num_meta
-# 		self.attention_option = "luong"
+		if cell_type == 'rnn':
+			self.cell = rnn.BasicRNNCell(self.config.hidden_size)
+			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
+		elif cell_type == 'gru':
+			self.cell = rnn.GRUCell(self.config.hidden_size)
+			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
+		elif cell_type == 'lstm':
+			self.cell = rnn.BasicLSTMCell(self.config.hidden_size)
+			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[self.config.num_layers, None, self.config.hidden_size], name="Initial_State")
 
-# 		return self.input_placeholder, self.label_placeholder, self.initial_state
+		print "Completed Initializing the Seq2Seq RNN Model using a {0} cell".format(cell_type.upper())
+
+		# Seq2Seq specific initializers
+		self.attention_option = "luong"
+		self.start_encode = start_encode
+		self.end_encode = end_encode
+
+	# Based on the example model presented in https://github.com/ematvey/tensorflow-seq2seq-tutorials/blob/master/model_new.py
+	def create_model(self, is_train):
+		with tf.variable_scope("Seq2Seq") as scope:
+			GO_SLICE = tf.ones([1, batch_size], dtype=tf.int32)*self.start_encode
+			PAD_SLICE = tf.ones([1, batch_size], dtype=tf.int32)*self.end_encode
+
+			self.decoder_train_inputs = tf.concat([GO_SLICE, self.label_placeholder[:,:self.input_size-1]], axis=0)
+			self.decoder_train_targets = self.label_placeholder
+			self.loss_weights = tf.ones([batch_size, self.input_size], dtype=tf.float32, name="loss_weights")
+			sqrt3 = math.sqrt(3)
+			initializer = tf.random_uniform_initializer(-sqrt3, sqrt3)
+
+			# Creating the embeddings and deriving the embeddings for the encoder and decoder
+			self.embedding_matrix = tf.get_variable(name="embedding_matrix",
+			    shape=[self.config.vocab_size, self.config.embedding_dims], initializer=initializer,
+			    dtype=tf.float32)
+
+			self.encoder_embedded = tf.nn.embedding_lookup(self.embedding_matrix, self.input_placeholder)
+
+			self.decoder_inputs_embedded = tf.nn.embedding_lookup(self.embedding_matrix, self.decoder_train_inputs)
+
+			self.encoder_outputs, self.encoder_state = tf.nn.dynamic_rnn(cell=self.cell, inputs=self.encoder_embedded,
+			                          sequence_length=self.num_encode ,time_major=True, dtype=tf.float32)
+
+			# Setting up the Attention mechanism
+			attention_states = tf.transpose(self.encoder_outputs, [1, 0, 2])
+
+			attention_keys, attention_values, attention_score_fn, \
+					attention_construct_fn = seq2seq.prepare_attention( attention_states=attention_states,
+										attention_option=self.attention_option, num_units=self.num_decode)
+
+			decoder_fn_train = seq2seq.attention_decoder_fn_train( encoder_state=self.encoder_state,
+			            attention_keys=attention_keys, attention_values=attention_values,
+			            attention_score_fn=attention_score_fn, attention_construct_fn=attention_construct_fn,
+			            name='attention_decoder')
+
+			decoder_fn_inference = seq2seq.attention_decoder_fn_inference( output_fn=output_fn, encoder_state=self.encoder_state,
+			            attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
+			            attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
+			            start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
+			            maximum_length=self.num_encode + 3, num_decoder_symbols=self.config.vocab_size)
+
+			self.decoder_outputs_train, self.decoder_state_train, \
+			self.decoder_context_state_train =  seq2seq.dynamic_rnn_decoder( cell=self.cell,
+			            decoder_fn=decoder_fn_train, inputs=self.decoder_inputs_embedded,
+			            sequence_length=self.decoder_train_length, time_major=True, scope=scope)
+
+			self.decoder_logits_train = tf.contrib.layers.linear(self.decoder_outputs_train, self.config.vocab_size, scope=scope)
+			self.decoder_prediction_train = tf.argmax(self.decoder_logits_train, axis=-1, name='decoder_prediction_train')
+
+			self.decoder_prediction_train = tf.argmax(self.decoder_logits_train, axis=-1, name='decoder_prediction_train')
+
+			scope.reuse_variables()
+
+			self.decoder_logits_inference, self.decoder_state_inference,
+            self.decoder_context_state_inference= seq2seq.dynamic_rnn_decoder(cell=self.cell,
+                    decoder_fn=decoder_fn_inference, time_major=True, scope=scope)
+
+                
+            self.decoder_prediction_inference = tf.argmax(self.decoder_logits_inference, axis=-1, name='decoder_prediction_inference')
+            return self.decoder_prediction_train, self.decoder_prediction_inference
 
 
-# 	def create_model(self, is_train):
 
-# 	 	if is_train:
-# 	 		self.cell = rnn.DropoutWrapper(self.cell, output_keep_prob=self.config.keep_prob,
-# 	 						input_keep_prob=1.0, output_keep_prob=1.0)
-# 	 	rnn_model = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
-
-# 	 	# Embedding lookup for ABC format characters
-# 	 	num_dims = self.config.vocab_size/2
-# 	 	embeddings_var = tf.Variable(tf.random_uniform([self.config.batch_size, num_dims, self.config.vocab_size],
-# 	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
-# 	 	embeddings_char = tf.nn.embedding_lookup(embeddings_var, self.input_placeholder)
-
-# 	 	# Embedding lookup for Metadata
-# 	 	num_dims_meta = self.meta_size/2
-# 	 	embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.batch_size, num_dims_meta, self.config.meta_size],
-# 	 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
-# 	 	embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.initial_state)
-
-# 	 	# Unrolling the timesteps of the RNN
-# 	 	encoder_outputs, encoder_state = rnn.dynamic_rnn( cell=rnn_model ,inputs=embeddings_char,
-# 	 								 dtype=tf.float32, time_major=True)
-
-# 	 	# Prepare Attention mechanism
-# 	 	attention_keys, attention_values, attention_score_fn, \
-# 	 					 attention_construct_fn = seq2seq.prepare_attention(encoder_outputs,
-# 	 					 				self.config.attention_option, self.config.num_decode)
-
-# 	 	# Training mechanism of decoder and attention mechanism
-# 	 	if is_train:
-# 		 	decoder_fn_train = seq2seq.attention_decoder_fn_train(encoder_state=encoder_state,
-# 	              					attention_keys=attention_keys,
-# 	              					attention_values=attention_values,
-# 	              					attention_score_fn=attention_score_fn,
-# 	              					attention_construct_fn=attention_construct_fn)
-
-
-# 		 	decoder_outputs_train, decoder_state_train, _ = seq2seq.dynamic_rnn_decoder(
-# 								            cell=, decoder_fn=decoder_fn_train,
-# 								            inputs=decoder_inputs, sequence_length=decoder_length,
-# 								            time_major=True)
-# 		 else:
-# 		 	decoder_fn_inference = attention_decoder_fn.attention_decoder_fn_inference(
-#                   		output_fn=output_fn, encoder_state=encoder_state, attention_keys=attention_keys,
-#                   		attention_values=attention_values, attention_score_fn=attention_score_fn,
-#                   		attention_construct_fn=attention_construct_fn, embeddings=decoder_embeddings,
-#                   		start_of_sequence_id=start_of_sequence_id, end_of_sequence_id=end_of_sequence_id,
-#                   		maximum_length=decoder_sequence_length - 1,
-#                   		num_decoder_symbols=num_decoder_symbols, dtype=dtypes.int32)
-
-#           	decoder_outputs_inference, decoder_state_inference, _ = seq2seq.dynamic_rnn_decoder(
-#                   					cell=decoder_cell, decoder_fn=decoder_fn_inference,
-#                   					time_major=True)
-
-
-
-	# def train(self, op='adam', max_norm):
+	def train(self, op='adam', max_norm):
+		logits = tf.transpose(self.decoder_logits_train, [1, 0, 2])
+        targets = tf.transpose(self.decoder_train_targets, [1, 0])
+        self.loss = seq2seq.sequence_loss(logits=logits, targets=targets,
+                                          weights=self.loss_weights)
+        self.train_op = tf.train.AdamOptimizer().minimize(self.loss)
+        return self.train_op, self.loss
 
 
 
@@ -422,7 +444,7 @@ class GenAdversarialNet(object):
 
 
 	def create_model(self):
-		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2, ])
+		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2,self.input_size ])
 
 		generator_model = CharRNN(self.input_size, self.label_size, self.batch_size,self.vocab_size,
 								self.cell_type, self.hyperparam_path, gan_inputs = self.input_placeholder)
