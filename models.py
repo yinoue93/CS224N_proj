@@ -346,6 +346,8 @@ class Seq2SeqRNN(object):
 			if is_train:
 				self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=self.config.keep_prob)
 
+			self.cell = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
+
 			# GO_SLICE = tf.ones([tf.shape(self.input_placeholder)[0],1], dtype=tf.int32)*self.start_encode
 
 			self.decoder_train_inputs = self.label_placeholder[:,:self.input_size-1]
@@ -503,105 +505,105 @@ class Discriminator(object):
 
 
 
-# class GenAdversarialNet(object):
+class GenAdversarialNet(object):
 
 
-# 	def __init__(self, input_size, label_size ,is_training, cell_type,
-# 					 hyperparam_path, use_lrelu=True, use_batchnorm=False, dropout=None):
-# 		self.input_size = input_size
-# 		self.label_size = label_size
-# 		self.is_training = is_training
-# 		self.cell_type = cell_type
-# 		self.hyperparam_path = hyperparam_path
-# 		self.use_lrelu = use_lrelu
-# 		self.use_batchnorm = use_batchnorm
-# 		self.dropout = dropout
-# 		self.config = Config(hyperparam_path)
+	def __init__(self, input_size, label_size ,is_training, cell_type,
+					 hyperparam_path, use_lrelu=True, use_batchnorm=False, dropout=None):
+		self.input_size = input_size
+		self.label_size = label_size
+		self.is_training = is_training
+		self.cell_type = cell_type
+		self.hyperparam_path = hyperparam_path
+		self.use_lrelu = use_lrelu
+		self.use_batchnorm = use_batchnorm
+		self.dropout = dropout
+		self.config = Config(hyperparam_path)
 
-# 		output_shape = (None,) + tuple([self.label_size])
-# 		self.label_placeholder = tf.placeholder(tf.float32, shape=output_shape, name='Output')
+		output_shape = (None,) + tuple([self.label_size])
+		self.label_placeholder = tf.placeholder(tf.float32, shape=output_shape, name='Output')
 
-# 		input_shape = (None,) + tuple([self.input_size])
-# 		self.input_placeholder = tf.placeholder(tf.float32, shape=input_shape, name='Input')
-
-
-# 	# Function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
-# 	def sigmoid_kl_with_logits(logits, targets):
-#     # broadcasts the same target value across the whole batch
-#     # this is implemented so awkwardly because tensorflow lacks an x log x op
-# 	    if targets in [0., 1.]:
-# 	        entropy = 0.
-# 	    else:
-# 	        entropy = - targets * np.log(targets) - (1. - targets) * np.log(1. - targets)
-# 	    return tf.nn.sigmoid_cross_entropy_with_logits(logits, tf.ones_like(logits) * targets) - entropy
-
-# 	# Ideas for function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
-# 	def normalize_class_outputs(logits):
-# 		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size, 1]))
-# 		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size, self.config.num_classes - 1])
-# 		mx = tf.reduce_max(positive_class_logits, 1, keep_dims=True)
-# 		safe_pos_class_logits = positive_class_logits - mx
-
-# 		gan_logits = tf.log(tf.reduce_sum(tf.exp(safe_pos_class_logits), 1)) + tf.squeeze(mx) - generated_class_logits
-# 		return gan_logits
+		input_shape = (None,) + tuple([self.input_size])
+		self.input_placeholder = tf.placeholder(tf.float32, shape=input_shape, name='Input')
 
 
-# 	def create_model(self):
-# 		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2,self.input_size ])
+	# Function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
+	def sigmoid_kl_with_logits(logits, targets):
+    # broadcasts the same target value across the whole batch
+    # this is implemented so awkwardly because tensorflow lacks an x log x op
+	    if targets in [0., 1.]:
+	        entropy = 0.
+	    else:
+	        entropy = - targets * np.log(targets) - (1. - targets) * np.log(1. - targets)
+	    return tf.nn.sigmoid_cross_entropy_with_logits(logits, tf.ones_like(logits) * targets) - entropy
 
-# 		generator_model = CharRNN(self.input_size, self.label_size, self.batch_size,self.vocab_size,
-# 								self.cell_type, self.hyperparam_path, gan_inputs = self.input_placeholder)
-# 		generator_model = generator_model.create_model(is_train = True)
-# 		self.rnn_placeholder, self.rnn_label_placeholder, self.rnn_meta_placeholder, \
-# 			self.rnn_initial_state_placeholder, self.rnn_use_meta_placeholder, \
-# 			self.rnn_train_op, self.rnn_loss = generator_model.train()
-# 		generator_output = generator_model.output
+	# Ideas for function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
+	def normalize_class_outputs(logits):
+		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size, 1]))
+		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size, self.config.num_classes - 1])
+		mx = tf.reduce_max(positive_class_logits, 1, keep_dims=True)
+		safe_pos_class_logits = positive_class_logits - mx
 
-# 		# Inputs the fake examples from the CharRNN to the CNN Discriminator
-# 		discriminator_model = Discriminator(generator_output, self.labels, is_training=self.is_training,
-# 				 batch_size=self.batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
-# 				 dropout=self.dropout, reuse=False)
-# 		discriminator_model = discriminator_model.create_model()
-# 		self.discriminator_fake = discriminator_model.train()
-
-# 		# Inputs the real sequences from the text files to the CNN Discriminator
-# 		embeddings_real = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
-# 										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
-# 		embeddings = tf.nn.embedding_lookup(embeddings_real, self.input_placeholder)
-# 		discriminator_real_samp = Discriminator(embeddings, self.labels, is_training=self.is_training,
-# 				 batch_size=self.batch_size,use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
-# 				 dropout=self.dropout, reuse=True)
-# 		discriminator_real_samp = discriminator_real_samp.create_model()
-# 		self.discriminator_real = discriminator_real_samp.train()
+		gan_logits = tf.log(tf.reduce_sum(tf.exp(safe_pos_class_logits), 1)) + tf.squeeze(mx) - generated_class_logits
+		return gan_logits
 
 
-# 		self.gan_real_output = self.discriminator_real.output
-# 		self.gan_fake_output = self.discriminator_fake.output
+	def create_model(self):
+		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2,self.input_size ])
 
-# 		self.gan_logits_real = self.normalize_class_outputs(self.gan_real_output)
-# 		self.gan_logits_fake = self.normalize_class_outputs(self.gan_fake_output)
+		generator_model = CharRNN(self.input_size, self.label_size, self.batch_size,self.vocab_size,
+								self.cell_type, self.hyperparam_path, gan_inputs = self.input_placeholder)
+		generator_model = generator_model.create_model(is_train = True)
+		self.rnn_placeholder, self.rnn_label_placeholder, self.rnn_meta_placeholder, \
+			self.rnn_initial_state_placeholder, self.rnn_use_meta_placeholder, \
+			self.rnn_train_op, self.rnn_loss = generator_model.train()
+		generator_output = generator_model.output
 
-# 		self.gan_pred_real = self.sigmoid_kl_with_logits(self.gan_logits_real, 1. - self.label_smooth)
-# 		self.gan_pred_fake = tf.nn.sigmoid_cross_entropy_with_logits(self.gan_logits_fake,
-#             					tf.zeros_like(self.gan_logits_fake))
+		# Inputs the fake examples from the CharRNN to the CNN Discriminator
+		discriminator_model = Discriminator(generator_output, self.labels, is_training=self.is_training,
+				 batch_size=self.batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 dropout=self.dropout, reuse=False)
+		discriminator_model = discriminator_model.create_model()
+		self.discriminator_fake = discriminator_model.train()
 
-# 		return self.gan_pred_real, self.gan_pred_fake
+		# Inputs the real sequences from the text files to the CNN Discriminator
+		embeddings_real = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
+										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
+		embeddings = tf.nn.embedding_lookup(embeddings_real, self.input_placeholder)
+		discriminator_real_samp = Discriminator(embeddings, self.labels, is_training=self.is_training,
+				 batch_size=self.batch_size,use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 dropout=self.dropout, reuse=True)
+		discriminator_real_samp = discriminator_real_samp.create_model()
+		self.discriminator_real = discriminator_real_samp.train()
+
+
+		self.gan_real_output = self.discriminator_real.output
+		self.gan_fake_output = self.discriminator_fake.output
+
+		self.gan_logits_real = self.normalize_class_outputs(self.gan_real_output)
+		self.gan_logits_fake = self.normalize_class_outputs(self.gan_fake_output)
+
+		self.gan_pred_real = self.sigmoid_kl_with_logits(self.gan_logits_real, 1. - self.label_smooth)
+		self.gan_pred_fake = tf.nn.sigmoid_cross_entropy_with_logits(self.gan_logits_fake,
+            					tf.zeros_like(self.gan_logits_fake))
+
+		return self.gan_pred_real, self.gan_pred_fake
 
 
 
-# 	def train(self):
-# 		class_loss_weight = 1
+	def train(self):
+		class_loss_weight = 1
 
-# 		self.gan_logits = tf.concat([self.gan_logits_real, self.gan_logits_fake],axis=0)
-# 		loss_class = class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits,
-#             		self.label_placeholder)
+		self.gan_logits = tf.concat([self.gan_logits_real, self.gan_logits_fake],axis=0)
+		loss_class = class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits,
+            		self.label_placeholder)
 
-# 		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake + loss_class)
-# 		tot_g_loss = tf.reduce_mean(self.sigmoid_kl_with_logits(self.gan_pred_fake, self.config.generator_prob))
+		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake + loss_class)
+		tot_g_loss = tf.reduce_mean(self.sigmoid_kl_with_logits(self.gan_pred_fake, self.config.generator_prob))
 
-# 		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_d_loss)
-# 		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_g_loss)
+		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_d_loss)
+		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_g_loss)
 
-# 		return self.input_placeholder, self.label_placeholder, \
-# 				self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
-# 				 self.rnn_use_meta_placeholder, self.train_op_d, self.train_op_gan
+		return self.input_placeholder, self.label_placeholder, \
+				self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
+				 self.rnn_use_meta_placeholder, self.train_op_d, self.train_op_gan
