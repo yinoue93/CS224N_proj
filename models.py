@@ -684,7 +684,8 @@ class GenAdversarialNet(object):
             		self.label_placeholder)
 
 		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake + loss_class)
-		tot_g_loss = tf.reduce_mean(self.sigmoid_kl_with_logits(self.gan_pred_fake, self.config.generator_prob))
+		tot_g_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits_fake, self.taken_actions))
+		tot_reg_loss = 
 
 		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_d_loss)
 		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_g_loss)
