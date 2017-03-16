@@ -2,12 +2,11 @@ import tensorflow as tf
 
 tf_ver = tf.__version__
 SHERLOCK = (str(tf_ver) == '0.12.1')
-if SHERLOCK:
-	from tensorflow.contrib import rnn
-	from tensorflow.contrib.metrics import confusion_matrix as tf_confusion_matrix
-else:
-	from tensorflow.python.ops import rnn_cell as rnn
 
+if SHERLOCK:
+	from tensorflow.contrib.metrics import confusion_matrix as tf_confusion_matrix
+
+from tensorflow.contrib import rnn
 from tensorflow.contrib import seq2seq
 import numpy as np
 import sys
@@ -21,7 +20,7 @@ import utils_hyperparam
 class Config(object):
 
 	def __init__(self, hyperparam_path):
-		self.batch_size = 32#100
+		self.batch_size = 100
 		self.lr = 0.001
 
 		self.songtype = 20#20
@@ -453,9 +452,9 @@ class Seq2SeqRNN(object):
 		self.summary_op = tf.summary.merge_all()
 
 		if SHERLOCK:
-			self.confusion_matrix = tf_confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
+			self.confusion_matrix = tf_confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.decoder_prediction_train, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
 		else:
-			self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
+			self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.decoder_prediction_train, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
 
 
 	def _feed_dict(self, feed_values):
@@ -499,8 +498,13 @@ class Seq2SeqRNN(object):
 	def sample(self, session, feed_values):
 		feed_dict = self._feed_dict(feed_values)
 
-		logits, state = session.run([self.logits_op, self.state_op], feed_dict=feed_dict)
-		return logits, state
+		logits = tf.transpose(self.decoder_logits_inference, [1, 0, 2])
+		# self.logits_op = tf.nn.softmax(logits)
+		predictions = tf.argmax(tf.nn.softmax(logits), axis=-1)
+		# logits, state = session.run([self.logits_op, self.self.decoder_context_state_inference], feed_dict=feed_dict)
+		pred = session.run(predictions, feed_dict=feed_dict)
+		# return logits, state
+		return pred
 
 
 

@@ -8,9 +8,6 @@ from models import CharRNN, Config, Seq2SeqRNN, CBOW
 import pickle
 import reader
 import random
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import utils_runtime
 import utils_hyperparam
 import utils
@@ -52,94 +49,43 @@ GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
 TEMPERATURE = 1.0
 
 
-def sample_with_temperature(logits, temperature):
-    flattened_logits = logits.flatten()
-    unnormalized = np.exp((flattened_logits - np.max(flattened_logits)) / temperature)
-    probabilities = unnormalized / float(np.sum(unnormalized))
-    sample = np.random.choice(len(probabilities), p=probabilities)
-    return sample
 
+def sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, meta, batch_size):
+    num_encode = [len(warm_chars)]
+    num_decode = [1000]
 
-def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
-    # Get vocabulary components
-    vocabulary_keys = vocabulary.keys()
-    removed_indicies = []
-    for c in characters_remove:
-        i = vocabulary_keys.index(c)
-        vocabulary_keys.remove(c)
-        removed_indicies.append(i)
-
-    # Delete unnecessary rows
-    conf_temp = np.delete(confusion_matrix, removed_indicies, axis=0)
-    # Delete unnecessary cols
-    new_confusion = np.delete(conf_temp, removed_indicies, axis=1)
-
-    vocabulary_values = range(len(vocabulary_keys))
-    vocabulary_size = len(vocabulary_keys)
-
-    fig, ax = plt.subplots(figsize=(10, 10))
-    res = ax.imshow(new_confusion.astype(int), interpolation='nearest', cmap=plt.cm.jet)
-    cb = fig.colorbar(res)
-
-    if annotate:
-        for x in xrange(vocabulary_size):
-            for y in xrange(vocabulary_size):
-                ax.annotate(str(new_confusion[x, y]), xy=(y, x),
-                            horizontalalignment='center',
-                            verticalalignment='center',
-                            fontsize=4)
-
-    plt.xticks(vocabulary_values, vocabulary_keys)
-    plt.yticks(vocabulary_values, vocabulary_keys)
-    fig.savefig('confusion_matrix_epoch{0}.png'.format(epoch))
-
-
-def get_checkpoint(args, session, saver):
-    # Checkpoint
-    found_ckpt = False
-
-    if args.override:
-        if tf.gfile.Exists(args.ckpt_dir):
-            tf.gfile.DeleteRecursively(args.ckpt_dir)
-        tf.gfile.MakeDirs(args.ckpt_dir)
-
-    ckpt = tf.train.get_checkpoint_state(args.ckpt_dir)
-    if ckpt and ckpt.model_checkpoint_path:
-        saver.restore(session, ckpt.model_checkpoint_path)
-        i_stopped = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
-        print "Found checkpoint for epoch ({0})".format(i_stopped)
-        found_ckpt = True
+    if cell_type == 'lstm':
+        initial_state_sample = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
     else:
-        print('No checkpoint file found!')
-        i_stopped = 0
+        initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)]
 
-    return i_stopped, found_ckpt
-
-
-def save_checkpoint(args, session, saver, i):
-    checkpoint_path = os.path.join(args.ckpt_dir, 'model.ckpt')
-    saver.save(session, checkpoint_path, global_step=i)
-    # saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
+    feed_values = pack_feed_values(args, [warm_chars],
+                                [[vocabulary["<go>"]]], [np.zeros_like(meta)],
+                                initial_state_sample, True,
+                                num_encode, num_encode)
+    # logits, state = curModel.sample(session, feed_values)
+    prediction = curModel.sample(session, feed_values)
+    return prediction
 
 
 def pack_feed_values(args, input_batch, label_batch, meta_batch,
                             initial_state_batch, use_meta_batch, num_encode, num_decode):
-    packed = []
+    if args.train != "sample":
+        for i, input_b in enumerate(input_batch):
+            if input_b.shape[0] != 25:
+                print "Input batch {0} contains and examples of size {1}".format(i, input_b.shape[0])
+                input_batch[i] = np.zeros(25)
 
-    for i, input_b in enumerate(input_batch):
-        if input_b.shape[0] != 25:
-            print "Input batch {0} contains and examples of size {1}".format(i, input_b.shape[0])
-            input_batch[i] = np.zeros(25)
-
-    for j, label_b in enumerate(label_batch):
-        if label_b.shape[0] != 25:
-            print "Output batch {0} contains and examples of size {1}".format(j, label_b.shape[0])
-            label_batch[j] = np.zeros(25)
+        for j, label_b in enumerate(label_batch):
+            if label_b.shape[0] != 25:
+                print "Output batch {0} contains and examples of size {1}".format(j, label_b.shape[0])
+                label_batch[j] = np.zeros(25)
 
 
     input_batch = np.stack(input_batch)
     label_batch = np.stack(label_batch)
 
+    packed = []
     if args.model == 'seq2seq':
         packed += [input_batch.T, label_batch.T, meta_batch, initial_state_batch, use_meta_batch, num_encode, num_decode]
         # + attention?
@@ -182,7 +128,7 @@ def run_model(args):
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
 
-    start_encode = vocabulary["<start>"]
+    start_encode = vocabulary["<start>"] if args.train != "sample" else 32#vocabulary["<go>"]
     end_encode = vocabulary["<end>"]
     # Getting meta mapping:
     meta_map = pickle.load(open(META_DATA, 'rb'))
@@ -221,7 +167,7 @@ def run_model(args):
         print "Inititialized TF Session!"
 
         # Checkpoint
-        i_stopped, found_ckpt = get_checkpoint(args, session, saver)
+        i_stopped, found_ckpt = utils_runtime.get_checkpoint(args, session, saver)
 
         file_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
         confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
@@ -253,44 +199,51 @@ def run_model(args):
                 print "Current Metadata: {0}".format(meta)
                 generated = warm_chars[:]
 
-                # Warm Start
-                for j, c in enumerate(warm_chars):
-                    if cell_type == 'lstm':
-                        if j == 0:
-                            initial_state_sample = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
+                if args.model == 'char':
+                    # Warm Start
+                    for j, c in enumerate(warm_chars):
+                        if cell_type == 'lstm':
+                            if j == 0:
+                                initial_state_sample = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
+                            else:
+                                initial_state_sample = []
+                                for lstm_tuple in state:
+                                    initial_state_sample.append(lstm_tuple[0])
                         else:
+                            initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
+
+                        feed_values = pack_feed_values(args, [[c]],
+                                                    [[0]], [meta],
+                                                    initial_state_sample, (j == 0),
+                                                    None, None)
+                        logits, state = curModel.sample(session, feed_values)
+
+                    # Sample
+                    sampled_character = utils_runtime.sample_with_temperature(logits, TEMPERATURE)
+                    while sampled_character != 81 and len(generated) < 200:
+                        if cell_type == 'lstm':
                             initial_state_sample = []
                             for lstm_tuple in state:
                                 initial_state_sample.append(lstm_tuple[0])
-                    else:
-                        initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
+                        else:
+                            initial_state_sample = state[0]
 
-                    feed_values = pack_feed_values(args, [[c]],
-                                                [[0]], [meta],
-                                                initial_state_sample, (j == 0),
-                                                None, None)
-                    logits, state = curModel.sample(session, feed_values)
+                        feed_values = pack_feed_values(args, [[sampled_character]],
+                                                    [[0]], [np.zeros_like(meta)],
+                                                    initial_state_sample, False,
+                                                    None, None)
+                        logits, state = curModel.sample(session, feed_values)
 
-                # Sample
-                sampled_character = sample_with_temperature(logits, TEMPERATURE)
-                while sampled_character != 81 and len(generated) < 200:
-                    if cell_type == 'lstm':
-                        initial_state_sample = []
-                        for lstm_tuple in state:
-                            initial_state_sample.append(lstm_tuple[0])
-                    else:
-                        initial_state_sample = state[0]
+                        sampled_character = utils_runtime.sample_with_temperature(logits, TEMPERATURE)
+                        generated.append(sampled_character)
 
-                    feed_values = pack_feed_values(args, [[sampled_character]],
-                                                [[0]], [np.zeros_like(meta)],
-                                                initial_state_sample, False,
-                                                None, None)
-                    logits, state = curModel.sample(session, feed_values)
+                elif args.model == 'seq2seq':
+                    prediction = sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, meta, batch_size)
+                    generated.extend(prediction.flatten())
 
-                    sampled_character = sample_with_temperature(logits, TEMPERATURE)
-                    generated.append(sampled_character)
 
                 decoded_characters = [vocabulary_decode[char] for char in generated]
+                print decoded_characters
 
                 # Currently chopping off the last char regardless if its <end> or not
                 encoding = utils.encoding2ABC(meta, generated[1:-1])
@@ -310,11 +263,12 @@ def run_model(args):
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
                         num_encode = [25] * 100
+                        num_decode = num_encode[:]
 
                         feed_values = pack_feed_values(args, input_window_batch,
                                                     output_window_batch, meta_batch,
                                                     initial_state_batch, True,
-                                                    num_encode, num_encode)
+                                                    num_encode, num_decode)
 
                         summary, conf, accuracy = curModel.run(args, session, feed_values)
 
@@ -332,7 +286,7 @@ def run_model(args):
 
                 if args.train == "train":
                     # Checkpoint model - every epoch
-                    save_checkpoint(args, session, saver, i)
+                    utils_runtime.save_checkpoint(args, session, saver, i)
                     confusion_suffix = i
                 else: # dev or test (NOT sample)
                     test_accuracy = np.mean(batch_accuracies)
@@ -347,7 +301,11 @@ def run_model(args):
                         curFile.close()
 
                 # Plot Confusion Matrix
-                plot_confusion(confusion_matrix, vocabulary, confusion_suffix)#, characters_remove=['|', '2'])
+                utils_runtime.plot_confusion(confusion_matrix, vocabulary, confusion_suffix, characters_remove=['|', '2'])
+
+
+
+
 
 def run_gan(args):
     input_size = 1 if args.train == "sample" else 25
@@ -405,7 +363,7 @@ def run_gan(args):
         print "Inititialized TF Session!"
 
         # Checkpoint
-        i_stopped, found_ckpt = get_checkpoint(args, session, saver)
+        i_stopped, found_ckpt = utils_runtime.get_checkpoint(args, session, saver)
 
         file_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
         confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
@@ -452,7 +410,7 @@ def run_gan(args):
                     loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
 
                 # Sample
-                sampled_character = sample_with_temperature(logits, TEMPERATURE)
+                sampled_character = utils_runtime.sample_with_temperature(logits, TEMPERATURE)
                 while sampled_character != 81 and len(generated) < 200:
                     if cell_type == 'lstm':
                         initial_state_sample = []
@@ -466,7 +424,7 @@ def run_gan(args):
                                                 initial_state_sample, False)
 
                     loss, logits, state = session.run([loss_op, logits_op, state_op], feed_dict=feed_dict)
-                    sampled_character = sample_with_temperature(logits, TEMPERATURE)
+                    sampled_character = utils_runtime.sample_with_temperature(logits, TEMPERATURE)
                     generated.append(sampled_character)
 
                 decoded_characters = [vocabulary_decode[char] for char in generated]
@@ -513,7 +471,7 @@ def run_gan(args):
 
                 if args.train == "train":
                     # Checkpoint model - every epoch
-                    save_checkpoint(session, saver, i)
+                    utils_runtime.save_checkpoint(session, saver, i)
                     confusion_suffix = i
                 else: # dev or test (NOT sample)
                     test_accuracy = np.mean(batch_accuracies)
@@ -528,7 +486,7 @@ def run_gan(args):
                         curFile.close()
 
                 # Plot Confusion Matrix
-                plot_confusion(confusion_matrix, vocabulary, confusion_suffix, characters_remove=['|', '2'])
+                utils_runtime.plot_confusion(confusion_matrix, vocabulary, confusion_suffix, characters_remove=['|', '2'])
 
 
 
