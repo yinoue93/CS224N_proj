@@ -2,7 +2,6 @@ import tensorflow as tf
 import numpy as np
 import os
 import sys
-from argparse import ArgumentParser
 from models import CharRNN, Config, Seq2SeqRNN, CBOW
 # from utils_preprocess import hdf52dict
 import pickle
@@ -37,7 +36,7 @@ GAN_DEVELOPMENT_DATA = DIR_MODIFIER + '/full_dataset/gan_dataset/nn_input_dev_st
 VOCAB_DATA = DIR_MODIFIER + '/full_dataset/global_map_music.p'
 META_DATA = DIR_MODIFIER + '/full_dataset/global_map_meta.p'
 
-SUMMARY_DIR = DIR_MODIFIER + '/summary'
+SUMMARY_DIR = DIR_MODIFIER + '/cbow_summary'
 
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
@@ -59,7 +58,7 @@ def sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, m
     else:
         initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)]
 
-    feed_values = pack_feed_values(args, [warm_chars],
+    feed_values = utils_runtime.pack_feed_values(args, [warm_chars],
                                 [[vocabulary["<go>"]]], [np.zeros_like(meta)],
                                 initial_state_sample, True,
                                 num_encode, num_encode)
@@ -68,40 +67,49 @@ def sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, m
     return prediction
 
 
-def pack_feed_values(args, input_batch, label_batch, meta_batch,
-                            initial_state_batch, use_meta_batch, num_encode, num_decode):
-    if args.train != "sample":
-        for i, input_b in enumerate(input_batch):
-            if input_b.shape[0] != 25:
-                print "Input batch {0} contains and examples of size {1}".format(i, input_b.shape[0])
-                input_batch[i] = np.zeros(25)
+def sampleCBOW(session, args, curModel, vocabulary_decode):
+        # Sample Model
+        warm_length = curModel.input_size
+        warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
 
-        for j, label_b in enumerate(label_batch):
-            if label_b.shape[0] != 25:
-                print "Output batch {0} contains and examples of size {1}".format(j, label_b.shape[0])
-                label_batch[j] = np.zeros(25)
+        warm_meta_array = [warm_meta]
+        # warm_meta_array = [warm_meta[:] for idx in xrange(3)]
+        # warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
+        # warm_meta_array[1][3] = np.random.choice(11)
 
+        print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
+        for meta in warm_meta_array:
+            print "Current Metadata: {0}".format(meta)
+            generated = warm_chars[:]
+            context_window = warm_chars[:]
 
-    input_batch = np.stack(input_batch)
-    label_batch = np.stack(label_batch)
+            # Warm Start (get the first prediction)
+            feed_values = utils_runtime.pack_feed_values(args, [context_window], [[0]*len(context_window)],
+                                           None, None, None, None, None)
+            logits,_ = curModel.sample(session, feed_values)
 
-    packed = []
-    if args.model == 'seq2seq':
-        packed += [input_batch.T, label_batch.T, meta_batch, initial_state_batch, use_meta_batch, num_encode, num_decode]
-        # + attention?
-    elif args.model == 'char':
-        packed += [input_batch, label_batch, meta_batch, initial_state_batch, use_meta_batch]
-    elif args.model == 'cbow':
-        new_label_batch = [d[-1] for d in label_batch]
-        packed += [input_batch, new_label_batch]
-    elif args.model == 'gan':
-        packed += [input_batch, label_batch, meta_batch, initial_state_batch, use_meta_batch]
-        # MORE?
-    return packed
+            # Sample
+            sampled_character = sample_with_temperature(logits, TEMPERATURE)
+            #while sampled_character!=END_TOKEN_ID and len(generated) < 200:
+            while len(generated) < 200:
+                # update the context input for the model
+                context_window = context_window[1:] + [sampled_character]
+
+                feed_values = utils_runtime.pack_feed_values(args, [context_window], [[0]*len(context_window)],
+                                               None, None, None, None, None)
+                logits,_ = curModel.sample(session, feed_values)
+
+                sampled_character = sample_with_temperature(logits, TEMPERATURE)
+                generated.append(sampled_character)
+
+            decoded_characters = [vocabulary_decode[char] for char in generated]
+
+            # Currently chopping off the last char regardless if its <end> or not
+            encoding = utils.encoding2ABC(meta, generated[1:-1])
 
 
 def run_model(args):
-    input_size = 1 if args.train == "sample" else 25
+    input_size = 1 if (args.train == "sample" and args.model!='cbow') else 25
     initial_size = 7
     label_size = 1 if args.train == "sample" else 25
     batch_size = 1 if args.train == "sample" else BATCH_SIZE
@@ -184,6 +192,10 @@ def run_model(args):
 
         # Sample Model
         if args.train == "sample":
+            if args.model=='cbow':
+                sampleCBOW(session, args, curModel, vocabulary_decode)
+                return
+
             # Sample Model
             warm_length = 20
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
@@ -212,7 +224,7 @@ def run_model(args):
                         else:
                             initial_state_sample = [np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] if (j == 0) else state[0]
 
-                        feed_values = pack_feed_values(args, [[c]],
+                        feed_values = utils_runtime.pack_feed_values(args, [[c]],
                                                     [[0]], [meta],
                                                     initial_state_sample, (j == 0),
                                                     None, None)
@@ -228,7 +240,7 @@ def run_model(args):
                         else:
                             initial_state_sample = state[0]
 
-                        feed_values = pack_feed_values(args, [[sampled_character]],
+                        feed_values = utils_runtime.pack_feed_values(args, [[sampled_character]],
                                                     [[0]], [np.zeros_like(meta)],
                                                     initial_state_sample, False,
                                                     None, None)
@@ -265,7 +277,7 @@ def run_model(args):
                         num_encode = [25] * 100
                         num_decode = num_encode[:]
 
-                        feed_values = pack_feed_values(args, input_window_batch,
+                        feed_values = utils_runtime.pack_feed_values(args, input_window_batch,
                                                     output_window_batch, meta_batch,
                                                     initial_state_batch, True,
                                                     num_encode, num_decode)
@@ -330,14 +342,14 @@ def run_gan(args):
     # cell_type = 'rnn'
 
     gan_label_size = len(meta_map['R'])
-    curModel = GenAdversarialNet(input_size, input_size, gan_label_size,
-                                 gan_label_size, args.train=='train', cell_type,
+    curModel = GenAdversarialNet(input_size, gan_label_size,
+                                args.train=='train', batch_size, cell_type,
                                  args.set_config, use_lrelu=True, use_batchnorm=False,
                                  dropout=None)
 
     probabilities_real_op, probabilities_fake_op = curModel.create_model()
-    self.rnn_placeholder,self.real_input_placeholder, self.real_label_placeholder, \
-                 self.fake_label_placeholder, self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
+    self.input_placeholder, self.label_placeholder, \
+                self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
                  self.rnn_use_meta_placeholder, self.train_op_d, self.train_op_gan = curModel.train()
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
@@ -502,32 +514,9 @@ def run_gan(args):
 
 
 
-def parseCommandLine():
-    desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)
-    parser = ArgumentParser(description=desc)
-
-    print("Parsing Command Line Arguments...")
-    requiredModel = parser.add_argument_group('Required Model arguments')
-    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "cbow", "gan"], type = str,
-    					dest = 'model', required = True, help = 'Type of model to run')
-    requiredTrain = parser.add_argument_group('Required Train/Test arguments')
-    requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
-    					dest = 'train', required = True, help = 'Training or Testing phase to be run')
-
-    requiredTrain.add_argument('-c', type = str, dest = 'set_config',
-                               help = 'Set hyperparameters', default='')
-
-    parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
-    parser.add_argument('-e', dest='num_epochs', default=50, type=int, help='Set the number of Epochs')
-    parser.add_argument('-ckpt', dest='ckpt_dir', default=DIR_MODIFIER + '/temp_ckpt/', type=str, help='Set the checkpoint directory')
-    args = parser.parse_args()
-    return args
-
-
-
 def main(_):
 
-    args = parseCommandLine()
+    args = utils_runtime.parseCommandLine()
     if args.model == 'gan':
         run_gan(args)
     else:

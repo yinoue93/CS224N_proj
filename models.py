@@ -3,10 +3,10 @@ import tensorflow as tf
 tf_ver = tf.__version__
 SHERLOCK = (str(tf_ver) == '0.12.1')
 
+from tensorflow.contrib import rnn
 if SHERLOCK:
 	from tensorflow.contrib.metrics import confusion_matrix as tf_confusion_matrix
 
-from tensorflow.contrib import rnn
 from tensorflow.contrib import seq2seq
 import numpy as np
 import sys
@@ -99,7 +99,8 @@ class CBOW(object):
 		print("Setup the training mechanism for the CBOW model.....")
 
 	def metrics(self):
-		self.prediction_op = tf.to_int32(tf.argmax(self.probabilities_op, axis=-1))
+		last_axis = len(self.probabilities_op.get_shape().as_list())
+		self.prediction_op = tf.to_int32(tf.argmax(self.probabilities_op, axis=last_axis-1))
 		difference = self.label_placeholder - self.prediction_op
 		zero = tf.constant(0, dtype=tf.int32)
 		boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
@@ -141,10 +142,8 @@ class CBOW(object):
 	def sample(self, session, feed_values):
 		feed_dict = self._feed_dict(feed_values)
 
-		logits = session.run(self.logits_op, feed_dict=feed_dict)
+		logits = session.run([self.logits_op], feed_dict=feed_dict)[0]
 		return logits, np.zeros((1, 1)) # dummy value
-
-
 
 
 
@@ -209,14 +208,14 @@ class CharRNN(object):
 
 		if self.cell_type == 'lstm':
 			initial_added = tf.cond(self.use_meta_placeholder,
-		                            lambda: [embeddings_meta for layer in xrange(self.config.num_layers)],
-		                            lambda: tf.unstack(self.initial_state_placeholder, axis=0)) # [self.initial_state_placeholder[layer] for layer in xrange(self.config.num_layers)])
+									lambda: [embeddings_meta for layer in xrange(self.config.num_layers)],
+									lambda: tf.unstack(self.initial_state_placeholder, axis=0)) # [self.initial_state_placeholder[layer] for layer in xrange(self.config.num_layers)])
 			[initial_added[idx].set_shape([self.config.batch_size, self.config.hidden_size]) for idx in xrange(self.config.num_layers)]
 			initial_tuple = tuple([rnn.LSTMStateTuple(initial_added[idx], np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32)) for idx in xrange(self.config.num_layers)])
-	  	else:
+		else:
 			initial_added = tf.cond(self.use_meta_placeholder,
-		                            lambda: embeddings_meta,
-		                            lambda: self.initial_state_placeholder)
+									lambda: embeddings_meta,
+									lambda: self.initial_state_placeholder)
 			initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
 
 		rnn_output, self.state_op = tf.nn.dynamic_rnn(rnn_model, embeddings, dtype=tf.float32, initial_state=initial_tuple)
@@ -228,7 +227,9 @@ class CharRNN(object):
 		decode_list = []
 		for i in xrange(self.input_size):
 			decode_list.append(tf.matmul(rnn_output[:, i, :], decode_var) + decode_bias)
+
 		self.logits_op = tf.stack(decode_list, axis=1)
+		self.rnn_output = rnn_output
 		self.probabilities_op = tf.nn.softmax(self.logits_op)
 
 		print("Built the Char RNN Model...")
@@ -376,15 +377,15 @@ class Seq2SeqRNN(object):
 
 			# Creating the embeddings and deriving the embeddings for the encoder and decoder
 			self.embedding_matrix = tf.get_variable(name="embedding_matrix",
-			    shape=[self.config.vocab_size, self.config.embedding_dims], initializer=initializer,
-			    dtype=tf.float32)
+				shape=[self.config.vocab_size, self.config.embedding_dims], initializer=initializer,
+				dtype=tf.float32)
 
 			self.encoder_embedded = tf.nn.embedding_lookup(self.embedding_matrix, self.input_placeholder)
 
 			self.decoder_inputs_embedded = tf.nn.embedding_lookup(self.embedding_matrix, self.decoder_train_inputs)
 
 			self.encoder_outputs, self.encoder_state = tf.nn.dynamic_rnn(cell=self.cell, inputs=self.encoder_embedded,
-			                          sequence_length=self.num_encode ,time_major=True, dtype=tf.float32)
+									  sequence_length=self.num_encode ,time_major=True, dtype=tf.float32)
 
 			# Setting up the Attention mechanism
 			attention_states = tf.transpose(self.encoder_outputs, [1, 0, 2])
@@ -394,20 +395,20 @@ class Seq2SeqRNN(object):
 										attention_option=self.attention_option, num_units=self.config.hidden_size)
 
 			decoder_fn_train = seq2seq.attention_decoder_fn_train( encoder_state=self.encoder_state,
-			            attention_keys=attention_keys, attention_values=attention_values,
-			            attention_score_fn=attention_score_fn, attention_construct_fn=attention_construct_fn,
-			            name='attention_decoder')
+						attention_keys=attention_keys, attention_values=attention_values,
+						attention_score_fn=attention_score_fn, attention_construct_fn=attention_construct_fn,
+						name='attention_decoder')
 
 			decoder_fn_inference = seq2seq.attention_decoder_fn_inference( output_fn=output_fn, encoder_state=self.encoder_state,
-			            attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
-			            attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
-			            start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
-			            maximum_length=tf.reduce_max(self.num_encode) + 3, num_decoder_symbols=self.config.vocab_size)
+						attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
+						attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
+						start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
+						maximum_length=tf.reduce_max(self.num_encode) + 3, num_decoder_symbols=self.config.vocab_size)
 
 			self.decoder_outputs_train, self.decoder_state_train, \
 			self.decoder_context_state_train =  seq2seq.dynamic_rnn_decoder( cell=self.cell,
-			            decoder_fn=decoder_fn_train, inputs=self.decoder_inputs_embedded,
-			            sequence_length=self.num_decode, time_major=True, scope=scope)
+						decoder_fn=decoder_fn_train, inputs=self.decoder_inputs_embedded,
+						sequence_length=self.num_decode, time_major=True, scope=scope)
 
 			self.decoder_logits_train = tf.contrib.layers.linear(self.decoder_outputs_train, self.config.vocab_size, scope=scope)
 			self.decoder_prediction_train = tf.argmax(self.decoder_logits_train, axis=-1, name='decoder_prediction_train')
@@ -417,8 +418,8 @@ class Seq2SeqRNN(object):
 			scope.reuse_variables()
 
 			self.decoder_logits_inference, self.decoder_state_inference, \
-            self.decoder_context_state_inference = seq2seq.dynamic_rnn_decoder(cell=self.cell,
-                    decoder_fn=decoder_fn_inference, time_major=True, scope=scope)
+			self.decoder_context_state_inference = seq2seq.dynamic_rnn_decoder(cell=self.cell,
+					decoder_fn=decoder_fn_inference, time_major=True, scope=scope)
 
 
 			self.decoder_prediction_inference = tf.argmax(self.decoder_logits_inference, axis=-1, name='decoder_prediction_inference')
@@ -435,7 +436,7 @@ class Seq2SeqRNN(object):
 		# print targets.get_shape().as_list()
 
 		self.loss_op = seq2seq.sequence_loss(logits=logits, targets=targets,
-		                                  weights=self.loss_weights)
+										  weights=self.loss_weights)
 		tf.summary.scalar('Loss', self.loss_op)
 		self.train_op = tf.train.AdamOptimizer().minimize(self.loss_op)
 		print("Setup the training mechanism for the Seq2Seq RNN Model...")
@@ -597,7 +598,7 @@ class Discriminator(object):
 class GenAdversarialNet(object):
 
 
-	def __init__(self, input_size, label_size ,is_training, cell_type,
+	def __init__(self, input_size, label_size , cell_type,
 					 hyperparam_path, use_lrelu=True, use_batchnorm=False, dropout=None):
 		self.input_size = input_size
 		self.label_size = label_size
@@ -618,18 +619,18 @@ class GenAdversarialNet(object):
 
 	# Function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
 	def sigmoid_kl_with_logits(logits, targets):
-    # broadcasts the same target value across the whole batch
-    # this is implemented so awkwardly because tensorflow lacks an x log x op
-	    if targets in [0., 1.]:
-	        entropy = 0.
-	    else:
-	        entropy = - targets * np.log(targets) - (1. - targets) * np.log(1. - targets)
-	    return tf.nn.sigmoid_cross_entropy_with_logits(logits, tf.ones_like(logits) * targets) - entropy
+	# broadcasts the same target value across the whole batch
+	# this is implemented so awkwardly because tensorflow lacks an x log x op
+		if targets in [0., 1.]:
+			entropy = 0.
+		else:
+			entropy = - targets * np.log(targets) - (1. - targets) * np.log(1. - targets)
+		return tf.nn.sigmoid_cross_entropy_with_logits(logits, tf.ones_like(logits) * targets) - entropy
 
 	# Ideas for function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
 	def normalize_class_outputs(logits):
-		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size, 1]))
-		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size, self.config.num_classes - 1])
+		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size/2, 1]))
+		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size/2, self.config.num_classes - 1])
 		mx = tf.reduce_max(positive_class_logits, 1, keep_dims=True)
 		safe_pos_class_logits = positive_class_logits - mx
 
@@ -637,44 +638,50 @@ class GenAdversarialNet(object):
 		return gan_logits
 
 
-	def create_model(self):
+	def create_model(self, is_training):
 		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2,self.input_size ])
 
 		generator_model = CharRNN(self.input_size, self.label_size, self.batch_size,self.vocab_size,
-								self.cell_type, self.hyperparam_path, gan_inputs = self.input_placeholder)
+								self.cell_type, self.hyperparam_path, gan_inputs = generator_inputs)
 		generator_model = generator_model.create_model(is_train = True)
 		self.rnn_placeholder, self.rnn_label_placeholder, self.rnn_meta_placeholder, \
 			self.rnn_initial_state_placeholder, self.rnn_use_meta_placeholder, \
 			self.rnn_train_op, self.rnn_loss = generator_model.train()
-		generator_output = generator_model.output
+		self.generator_output = generator_model.output
+
+		# Sample the output of the GAN to find the correct prediction of each character
+		self.current_policy =  tf.multinomial(generator_output, num_samples=1)
+
+		# Create the Discriminator embeddings and sample the Generator output and Real input from these embeddings
+		real_inputs = tf.slice(self.input_placeholder, [self.config.batch_size/2,0], [self.config.batch_size/2,self.input_size ])
+		self.embeddings_disc = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
+										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
+		embeddings_generator_out = tf.nn.embedding_lookup(embeddings_disc, current_policy)
+		embeddings_real_input = tf.nn.embedding_lookup(embeddings_disc, real_inputs)
 
 		# Inputs the fake examples from the CharRNN to the CNN Discriminator
-		discriminator_model = Discriminator(generator_output, self.labels, is_training=self.is_training,
+		discriminator_gen_model = Discriminator(embeddings_generator_out, None, is_training=is_training,
 				 batch_size=self.batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=False)
-		discriminator_model = discriminator_model.create_model()
-		self.discriminator_fake = discriminator_model.train()
+		discriminator_gen_pred = discriminator_model.create_model()
 
 		# Inputs the real sequences from the text files to the CNN Discriminator
-		embeddings_real = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
-										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
-		embeddings = tf.nn.embedding_lookup(embeddings_real, self.input_placeholder)
-		discriminator_real_samp = Discriminator(embeddings, self.labels, is_training=self.is_training,
+		discriminator_real_samp = Discriminator(embeddings_real_input, None, is_training=is_training,
 				 batch_size=self.batch_size,use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=True)
-		discriminator_real_samp = discriminator_real_samp.create_model()
-		self.discriminator_real = discriminator_real_samp.train()
+		discriminator_real_pred = discriminator_real_samp.create_model()
 
 
-		self.gan_real_output = self.discriminator_real.output
-		self.gan_fake_output = self.discriminator_fake.output
+		# Collecting outputs and finding losses
+		self.gan_real_output = discriminator_real_samp.output
+		self.gan_fake_output = discriminator_gen_model.output
 
 		self.gan_logits_real = self.normalize_class_outputs(self.gan_real_output)
 		self.gan_logits_fake = self.normalize_class_outputs(self.gan_fake_output)
 
 		self.gan_pred_real = self.sigmoid_kl_with_logits(self.gan_logits_real, 1. - self.label_smooth)
 		self.gan_pred_fake = tf.nn.sigmoid_cross_entropy_with_logits(self.gan_logits_fake,
-            					tf.zeros_like(self.gan_logits_fake))
+								tf.zeros_like(self.gan_logits_fake))
 
 		return self.gan_pred_real, self.gan_pred_fake
 
@@ -685,12 +692,14 @@ class GenAdversarialNet(object):
 
 		self.gan_logits = tf.concat([self.gan_logits_real, self.gan_logits_fake],axis=0)
 		loss_class = class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits,
-            		self.label_placeholder)
+					self.label_placeholder)
 
 		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake + loss_class)
-		tot_g_loss = tf.reduce_mean(self.sigmoid_kl_with_logits(self.gan_pred_fake, self.config.generator_prob))
+		tot_g_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(self.generator_output,
+							self.label_placeholder[:,self.batch_size/2:]))
 
-		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_d_loss)
+		self.d_gen_grad = tf.gradients(tot_d_loss, self.embeddings_disc)
+		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).apply_gradients(zip(self.d_gen_grad, self.embeddings_disc))
 		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_g_loss)
 
 		return self.input_placeholder, self.label_placeholder, \
