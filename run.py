@@ -119,22 +119,37 @@ def get_checkpoint(args, session, saver):
 def save_checkpoint(args, session, saver, i):
     checkpoint_path = os.path.join(args.ckpt_dir, 'model.ckpt')
     saver.save(session, checkpoint_path, global_step=i)
-    saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
+    # saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
 
 
 def pack_feed_values(args, input_batch, label_batch, meta_batch,
                             initial_state_batch, use_meta_batch, num_encode, num_decode):
-    packed = [input_batch]
+    packed = []
+
+    for i, input_b in enumerate(input_batch):
+        if input_b.shape[0] != 25:
+            print "Input batch {0} contains and examples of size {1}".format(i, input_b.shape[0])
+            input_batch[i] = np.zeros(25)
+
+    for j, label_b in enumerate(label_batch):
+        if label_b.shape[0] != 25:
+            print "Output batch {0} contains and examples of size {1}".format(j, label_b.shape[0])
+            label_batch[j] = np.zeros(25)
+
+
+    input_batch = np.stack(input_batch)
+    label_batch = np.stack(label_batch)
+
     if args.model == 'seq2seq':
-        packed += [label_batch, meta_batch, initial_state_batch, use_meta_batch, num_encode, num_decode]
+        packed += [input_batch.T, label_batch.T, meta_batch, initial_state_batch, use_meta_batch, num_encode, num_decode]
         # + attention?
     elif args.model == 'char':
-        packed += [label_batch, meta_batch, initial_state_batch, use_meta_batch]
+        packed += [input_batch, label_batch, meta_batch, initial_state_batch, use_meta_batch]
     elif args.model == 'cbow':
         new_label_batch = [d[-1] for d in label_batch]
-        packed += [new_label_batch]
+        packed += [input_batch, new_label_batch]
     elif args.model == 'gan':
-        packed += [label_batch, meta_batch, initial_state_batch, use_meta_batch]
+        packed += [input_batch, label_batch, meta_batch, initial_state_batch, use_meta_batch]
         # MORE?
     return packed
 
@@ -147,11 +162,22 @@ def run_model(args):
     NUM_EPOCHS = args.num_epochs
     print "Using checkpoint directory: {0}".format(args.ckpt_dir)
 
+    use_seq2seq_data = (args.model == 'seq2seq' or args.model == 'gan')
+    if args.train == 'train':
+        dataset_dir = GAN_TRAIN_DATA if use_seq2seq_data else TRAIN_DATA
+    elif args.train == 'test':
+        dataset_dir = GAN_TEST_DATA if use_seq2seq_data else TEST_DATA
+    else: # args.train == 'dev' or 'sample' (which has no dataset, but we just read anyway)
+        dataset_dir = GAN_DEVELOPMENT_DATA if use_seq2seq_data else DEVELOPMENT_DATA
+    dateset_filenames = reader.abc_filenames(dataset_dir)
+
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
     vocab_sz = len(vocabulary)
     vocabulary["<start>"] = vocab_sz
     vocabulary["<end>"] = vocab_sz+1
+    if use_seq2seq_data:
+        vocabulary["<go>"] = vocab_sz+2
 
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
@@ -167,9 +193,9 @@ def run_model(args):
 
     if args.model == 'seq2seq':
         curModel = Seq2SeqRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config, start_encode, end_encode)
-        decoder_prediction_train, decoder_prediction_inference = curModel.create_model(is_train = (args.train=='train'))
-        input_placeholder, label_placeholder, meta_placeholder, initial_state_placeholder, \
-             use_meta_placeholder, num_encode, num_decode, train_op, loss_op = curModel.train()
+        curModel.create_model(is_train = (args.train=='train'))
+        curModel.train()
+        curModel.metrics()
 
     elif args.model == 'char':
         curModel = CharRNN(input_size, label_size, batch_size, vocabulary_size, cell_type, args.set_config)
@@ -186,13 +212,6 @@ def run_model(args):
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
 
     print "Reading in {0}-set filenames.".format(args.train)
-    if args.train == 'train':
-        dataset_dir = TRAIN_DATA
-    elif args.train == 'test':
-        dataset_dir = TEST_DATA
-    else: # args.train == 'dev' or 'sample' (which has no dataset, but we just read anyway)
-        dataset_dir = DEVELOPMENT_DATA
-    dateset_filenames = reader.abc_filenames(dataset_dir)
 
     global_step = tf.Variable(0, trainable=False, name='global_step') #tf.contrib.framework.get_or_create_global_step()
     saver = tf.train.Saver(max_to_keep=NUM_EPOCHS)
@@ -290,11 +309,12 @@ def run_model(args):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
+                        num_encode = [25] * 100
 
                         feed_values = pack_feed_values(args, input_window_batch,
                                                     output_window_batch, meta_batch,
                                                     initial_state_batch, True,
-                                                    None, None)
+                                                    num_encode, num_encode)
 
                         summary, conf, accuracy = curModel.run(args, session, feed_values)
 
@@ -508,7 +528,7 @@ def run_gan(args):
                         curFile.close()
 
                 # Plot Confusion Matrix
-                plot_confusion(confusion_matrix, vocabulary, confusion_suffix)#, characters_remove=['|', '2'])
+                plot_confusion(confusion_matrix, vocabulary, confusion_suffix, characters_remove=['|', '2'])
 
 
 
