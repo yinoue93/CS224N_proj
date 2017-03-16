@@ -2,11 +2,9 @@ import tensorflow as tf
 
 tf_ver = tf.__version__
 SHERLOCK = (str(tf_ver) == '0.12.1')
+from tensorflow.contrib import rnn
 if SHERLOCK:
-	from tensorflow.contrib import rnn
 	from tensorflow.contrib.metrics import confusion_matrix as tf_confusion_matrix
-else:
-	from tensorflow.python.ops import rnn_cell as rnn
 
 from tensorflow.contrib import seq2seq
 import numpy as np
@@ -644,14 +642,14 @@ class GenAdversarialNet(object):
 		self.rnn_placeholder, self.rnn_label_placeholder, self.rnn_meta_placeholder, \
 			self.rnn_initial_state_placeholder, self.rnn_use_meta_placeholder, \
 			self.rnn_train_op, self.rnn_loss = generator_model.train()
-		generator_output = generator_model.output
+		self.generator_output = generator_model.output
 
 		# Sample the output of the GAN to find the correct prediction of each character
-		current_policy =  tf.multinomial(generator_output, num_samples=1)
+		self.current_policy =  tf.multinomial(generator_output, num_samples=1)
 
 		# Create the Discriminator embeddings and sample the Generator output and Real input from these embeddings
 		real_inputs = tf.slice(self.input_placeholder, [self.config.batch_size/2,0], [self.config.batch_size/2,self.input_size ])
-		embeddings_disc = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
+		self.embeddings_disc = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
 										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
 		embeddings_generator_out = tf.nn.embedding_lookup(embeddings_disc, current_policy)
 		embeddings_real_input = tf.nn.embedding_lookup(embeddings_disc, real_inputs)
@@ -670,8 +668,8 @@ class GenAdversarialNet(object):
 
 
 		# Collecting outputs and finding losses
-		self.gan_real_output = discriminator_gen_model.output
-		self.gan_fake_output = discriminator_real_samp.output
+		self.gan_real_output = discriminator_real_samp.output
+		self.gan_fake_output = discriminator_gen_model.output
 
 		self.gan_logits_real = self.normalize_class_outputs(self.gan_real_output)
 		self.gan_logits_fake = self.normalize_class_outputs(self.gan_fake_output)
@@ -692,10 +690,11 @@ class GenAdversarialNet(object):
             		self.label_placeholder)
 
 		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake + loss_class)
-		tot_g_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(self.gan_logits_fake, self.taken_actions))
-		tot_reg_loss = 
+		tot_g_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(self.generator_output, 
+							self.label_placeholder[:,self.batch_size/2:]))
 
-		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_d_loss)
+		self.d_gen_grad = tf.gradients(tot_d_loss, self.embeddings_disc)
+		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).apply_gradients(zip(self.d_gen_grad, self.embeddings_disc))
 		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).minimize(tot_g_loss)
 
 		return self.input_placeholder, self.label_placeholder, \

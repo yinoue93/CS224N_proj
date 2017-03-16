@@ -372,14 +372,14 @@ def run_gan(args):
     # cell_type = 'rnn'
 
     gan_label_size = len(meta_map['R'])
-    curModel = GenAdversarialNet(input_size, input_size, gan_label_size,
-                                 gan_label_size, args.train=='train', cell_type,
+    curModel = GenAdversarialNet(input_size, gan_label_size,
+                                args.train=='train', batch_size, cell_type,
                                  args.set_config, use_lrelu=True, use_batchnorm=False,
                                  dropout=None)
 
     probabilities_real_op, probabilities_fake_op = curModel.create_model()
-    self.rnn_placeholder,self.real_input_placeholder, self.real_label_placeholder, \
-                 self.fake_label_placeholder, self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
+    self.input_placeholder, self.label_placeholder, \
+                self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
                  self.rnn_use_meta_placeholder, self.train_op_d, self.train_op_gan = curModel.train()
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
