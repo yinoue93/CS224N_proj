@@ -40,7 +40,7 @@ GAN_DEVELOPMENT_DATA = DIR_MODIFIER + '/full_dataset/gan_dataset/nn_input_dev_st
 VOCAB_DATA = DIR_MODIFIER + '/full_dataset/global_map_music.p'
 META_DATA = DIR_MODIFIER + '/full_dataset/global_map_meta.p'
 
-SUMMARY_DIR = DIR_MODIFIER + '/summary'
+SUMMARY_DIR = DIR_MODIFIER + '/cbow_summary'
 
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
@@ -126,15 +126,15 @@ def pack_feed_values(args, input_batch, label_batch, meta_batch,
                             initial_state_batch, use_meta_batch, num_encode, num_decode):
     packed = []
 
-    for i, input_b in enumerate(input_batch):
-        if input_b.shape[0] != 25:
-            print "Input batch {0} contains and examples of size {1}".format(i, input_b.shape[0])
-            input_batch[i] = np.zeros(25)
+    # for i, input_b in enumerate(input_batch):
+    #     if input_b.shape[0] != 25:
+    #         print "Input batch {0} contains and examples of size {1}".format(i, input_b.shape[0])
+    #         input_batch[i] = np.zeros(25)
 
-    for j, label_b in enumerate(label_batch):
-        if label_b.shape[0] != 25:
-            print "Output batch {0} contains and examples of size {1}".format(j, label_b.shape[0])
-            label_batch[j] = np.zeros(25)
+    # for j, label_b in enumerate(label_batch):
+    #     if label_b.shape[0] != 25:
+    #         print "Output batch {0} contains and examples of size {1}".format(j, label_b.shape[0])
+    #         label_batch[j] = np.zeros(25)
 
 
     input_batch = np.stack(input_batch)
@@ -154,8 +154,49 @@ def pack_feed_values(args, input_batch, label_batch, meta_batch,
     return packed
 
 
+def sampleCBOW(session, args, curModel, vocabulary_decode):
+        # Sample Model
+        warm_length = curModel.input_size
+        warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
+
+        warm_meta_array = [warm_meta]
+        # warm_meta_array = [warm_meta[:] for idx in xrange(3)]
+        # warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
+        # warm_meta_array[1][3] = np.random.choice(11)
+
+        print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
+        for meta in warm_meta_array:
+            print "Current Metadata: {0}".format(meta)
+            generated = warm_chars[:]
+            context_window = warm_chars[:]
+
+            # Warm Start (get the first prediction)
+            feed_values = pack_feed_values(args, [context_window], [[0]*len(context_window)], 
+                                           None, None, None, None, None)
+            logits,_ = curModel.sample(session, feed_values)
+
+            # Sample
+            sampled_character = sample_with_temperature(logits, TEMPERATURE)
+            #while sampled_character!=END_TOKEN_ID and len(generated) < 200:
+            while len(generated) < 200:
+                # update the context input for the model
+                context_window = context_window[1:] + [sampled_character]
+
+                feed_values = pack_feed_values(args, [context_window], [[0]*len(context_window)], 
+                                               None, None, None, None, None)
+                logits,_ = curModel.sample(session, feed_values)
+
+                sampled_character = sample_with_temperature(logits, TEMPERATURE)
+                generated.append(sampled_character)
+
+            decoded_characters = [vocabulary_decode[char] for char in generated]
+
+            # Currently chopping off the last char regardless if its <end> or not
+            encoding = utils.encoding2ABC(meta, generated[1:-1])
+
+
 def run_model(args):
-    input_size = 1 if args.train == "sample" else 25
+    input_size = 1 if (args.train == "sample" and args.model!='cbow') else 25
     initial_size = 7
     label_size = 1 if args.train == "sample" else 25
     batch_size = 1 if args.train == "sample" else BATCH_SIZE
@@ -238,6 +279,10 @@ def run_model(args):
 
         # Sample Model
         if args.train == "sample":
+            if args.model=='cbow':
+                sampleCBOW(session, args, curModel, vocabulary_decode)
+                return
+
             # Sample Model
             warm_length = 20
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
