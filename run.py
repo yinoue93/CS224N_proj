@@ -1,9 +1,12 @@
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 import tensorflow as tf
 import numpy as np
 import os
 import sys
 from models import CharRNN, Config, Seq2SeqRNN, CBOW
-# from utils_preprocess import hdf52dict
 import pickle
 import reader
 import random
@@ -46,6 +49,47 @@ GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
 # For T --> inf, p is uniform. Easy to sample from!
 # For T --> 0, p "concentrates" on arg max. Hard to sample from!
 TEMPERATURE = 1.0
+
+
+def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
+    # Get vocabulary components
+    vocabulary_keys = vocabulary.keys()
+    vocabulary_values = vocabulary.values()
+    # print vocabulary_keys
+    vocabulary_values, vocabulary_keys =  tuple([list(tup) for tup in zip(*sorted(zip(vocabulary_values, vocabulary_keys)))])
+    # print vocabulary_keys
+
+    removed_indicies = []
+    for c in characters_remove:
+        i = vocabulary_keys.index(c)
+        vocabulary_keys.remove(c)
+        index = vocabulary_values.pop(i)
+        removed_indicies.append(index)
+
+    # Delete unnecessary rows
+    conf_temp = np.delete(confusion_matrix, removed_indicies, axis=0)
+    # Delete unnecessary cols
+    new_confusion = np.delete(conf_temp, removed_indicies, axis=1)
+
+
+    vocabulary_values = range(len(vocabulary_keys))
+    vocabulary_size = len(vocabulary_keys)
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    res = ax.imshow(new_confusion.astype(int), interpolation='nearest', cmap=plt.cm.jet)
+    cb = fig.colorbar(res)
+
+    if annotate:
+        for x in xrange(vocabulary_size):
+            for y in xrange(vocabulary_size):
+                ax.annotate(str(new_confusion[x, y]), xy=(y, x),
+                            horizontalalignment='center',
+                            verticalalignment='center',
+                            fontsize=4)
+
+    plt.xticks(vocabulary_values, vocabulary_keys, fontsize=6)
+    plt.yticks(vocabulary_values, vocabulary_keys, fontsize=6)
+    fig.savefig('confusion_matrix_epoch{0}.png'.format(epoch))
 
 
 
@@ -136,7 +180,7 @@ def run_model(args):
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
 
-    start_encode = vocabulary["<start>"] if args.train != "sample" else 32#vocabulary["<go>"]
+    start_encode = vocabulary["<start>"] if args.train != "sample" else vocabulary["<go>"]
     end_encode = vocabulary["<end>"]
     # Getting meta mapping:
     meta_map = pickle.load(open(META_DATA, 'rb'))
@@ -299,7 +343,7 @@ def run_model(args):
                 if args.train == "train":
                     # Checkpoint model - every epoch
                     utils_runtime.save_checkpoint(args, session, saver, i)
-                    confusion_suffix = i
+                    confusion_suffix = str(i)
                 else: # dev or test (NOT sample)
                     test_accuracy = np.mean(batch_accuracies)
                     print "Model {0} accuracy: {1}".format(args.train, test_accuracy)
@@ -313,7 +357,8 @@ def run_model(args):
                         curFile.close()
 
                 # Plot Confusion Matrix
-                utils_runtime.plot_confusion(confusion_matrix, vocabulary, confusion_suffix, characters_remove=['|', '2'])
+                plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
+                plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
 
 
 

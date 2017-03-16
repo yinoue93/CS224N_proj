@@ -7,10 +7,6 @@ from argparse import ArgumentParser
 import tensorflow as tf
 from utils_preprocess import *
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
 tf_ver = tf.__version__
 SHERLOCK = (str(tf_ver) == '0.12.1')
 
@@ -98,40 +94,6 @@ def sample_with_temperature(logits, temperature):
     probabilities = unnormalized / float(np.sum(unnormalized))
     sample = np.random.choice(len(probabilities), p=probabilities)
     return sample
-
-
-def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
-    # Get vocabulary components
-    vocabulary_keys = vocabulary.keys()
-    removed_indicies = []
-    for c in characters_remove:
-        i = vocabulary_keys.index(c)
-        vocabulary_keys.remove(c)
-        removed_indicies.append(i)
-
-    # Delete unnecessary rows
-    conf_temp = np.delete(confusion_matrix, removed_indicies, axis=0)
-    # Delete unnecessary cols
-    new_confusion = np.delete(conf_temp, removed_indicies, axis=1)
-
-    vocabulary_values = range(len(vocabulary_keys))
-    vocabulary_size = len(vocabulary_keys)
-
-    fig, ax = plt.subplots(figsize=(10, 10))
-    res = ax.imshow(new_confusion.astype(int), interpolation='nearest', cmap=plt.cm.jet)
-    cb = fig.colorbar(res)
-
-    if annotate:
-        for x in xrange(vocabulary_size):
-            for y in xrange(vocabulary_size):
-                ax.annotate(str(new_confusion[x, y]), xy=(y, x),
-                            horizontalalignment='center',
-                            verticalalignment='center',
-                            fontsize=4)
-
-    plt.xticks(vocabulary_values, vocabulary_keys)
-    plt.yticks(vocabulary_values, vocabulary_keys)
-    fig.savefig('confusion_matrix_epoch{0}.png'.format(epoch))
 
 
 def get_checkpoint(args, session, saver):
