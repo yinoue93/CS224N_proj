@@ -183,6 +183,7 @@ class CharRNN(object):
 		for i in xrange(self.input_size):
 			decode_list.append(tf.matmul(rnn_output[:, i, :], decode_var) + decode_bias)
 		self.output = tf.stack(decode_list, axis=1)
+		self.rnn_output = rnn_output
 		self.pred = tf.nn.softmax(self.output)
 
 		print("Built the Char RNN Model...")
@@ -416,7 +417,7 @@ class Discriminator(object):
 class GenAdversarialNet(object):
 
 
-	def __init__(self, input_size, label_size ,is_training, cell_type,
+	def __init__(self, input_size, label_size , cell_type,
 					 hyperparam_path, use_lrelu=True, use_batchnorm=False, dropout=None):
 		self.input_size = input_size
 		self.label_size = label_size
@@ -447,8 +448,8 @@ class GenAdversarialNet(object):
 
 	# Ideas for function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
 	def normalize_class_outputs(logits):
-		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size, 1]))
-		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size, self.config.num_classes - 1])
+		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size/2, 1]))
+		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size/2, self.config.num_classes - 1])
 		mx = tf.reduce_max(positive_class_logits, 1, keep_dims=True)
 		safe_pos_class_logits = positive_class_logits - mx
 
@@ -456,37 +457,43 @@ class GenAdversarialNet(object):
 		return gan_logits
 
 
-	def create_model(self):
+	def create_model(self, is_training):
 		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2,self.input_size ])
 
 		generator_model = CharRNN(self.input_size, self.label_size, self.batch_size,self.vocab_size,
-								self.cell_type, self.hyperparam_path, gan_inputs = self.input_placeholder)
+								self.cell_type, self.hyperparam_path, gan_inputs = generator_inputs)
 		generator_model = generator_model.create_model(is_train = True)
 		self.rnn_placeholder, self.rnn_label_placeholder, self.rnn_meta_placeholder, \
 			self.rnn_initial_state_placeholder, self.rnn_use_meta_placeholder, \
 			self.rnn_train_op, self.rnn_loss = generator_model.train()
 		generator_output = generator_model.output
 
+		# Sample the output of the GAN to find the correct prediction of each character
+		current_policy =  tf.multinomial(generator_output, num_samples=1)
+
+		# Create the Discriminator embeddings and sample the Generator output and Real input from these embeddings
+		real_inputs = tf.slice(self.input_placeholder, [self.config.batch_size/2,0], [self.config.batch_size/2,self.input_size ])
+		embeddings_disc = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
+										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
+		embeddings_generator_out = tf.nn.embedding_lookup(embeddings_disc, current_policy)
+		embeddings_real_input = tf.nn.embedding_lookup(embeddings_disc, real_inputs)
+
 		# Inputs the fake examples from the CharRNN to the CNN Discriminator
-		discriminator_model = Discriminator(generator_output, self.labels, is_training=self.is_training,
+		discriminator_gen_model = Discriminator(embeddings_generator_out, None, is_training=is_training,
 				 batch_size=self.batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=False)
-		discriminator_model = discriminator_model.create_model()
-		self.discriminator_fake = discriminator_model.train()
+		discriminator_gen_pred = discriminator_model.create_model()
 
 		# Inputs the real sequences from the text files to the CNN Discriminator
-		embeddings_real = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
-										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
-		embeddings = tf.nn.embedding_lookup(embeddings_real, self.input_placeholder)
-		discriminator_real_samp = Discriminator(embeddings, self.labels, is_training=self.is_training,
+		discriminator_real_samp = Discriminator(embeddings_real_input, None, is_training=is_training,
 				 batch_size=self.batch_size,use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=True)
-		discriminator_real_samp = discriminator_real_samp.create_model()
-		self.discriminator_real = discriminator_real_samp.train()
+		discriminator_real_pred = discriminator_real_samp.create_model()
 
 
-		self.gan_real_output = self.discriminator_real.output
-		self.gan_fake_output = self.discriminator_fake.output
+		# Collecting outputs and finding losses
+		self.gan_real_output = discriminator_gen_model.output
+		self.gan_fake_output = discriminator_real_samp.output
 
 		self.gan_logits_real = self.normalize_class_outputs(self.gan_real_output)
 		self.gan_logits_fake = self.normalize_class_outputs(self.gan_fake_output)
