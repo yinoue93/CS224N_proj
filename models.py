@@ -202,9 +202,6 @@ class CharRNN(object):
 		# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
 		embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
 		# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.meta_placeholder[:, 5:])], axis=0)
-		# print embeddings_meta.get_shape().as_list()
-		# print embeddings.get_shape().as_list()
-		# print self.input_placeholder.get_shape().as_list()
 
 		if self.cell_type == 'lstm':
 			initial_added = tf.cond(self.use_meta_placeholder,
@@ -384,8 +381,30 @@ class Seq2SeqRNN(object):
 
 			self.decoder_inputs_embedded = tf.nn.embedding_lookup(self.embedding_matrix, self.decoder_train_inputs)
 
+			# Embedding lookup for Metadata
+			embeddings_var_meta = tf.Variable(tf.random_uniform([self.config.vocab_meta, self.config.meta_embed],
+										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
+			embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.meta_placeholder[:, :5])
+
+			# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
+			embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
+			# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.meta_placeholder[:, 5:])], axis=0)
+
+			# Create initial_state
+			if self.cell_type == 'lstm':
+				initial_added = tf.cond(self.use_meta_placeholder,
+										lambda: [embeddings_meta for layer in xrange(self.config.num_layers)],
+										lambda: tf.unstack(self.initial_state_placeholder, axis=0)) # [self.initial_state_placeholder[layer] for layer in xrange(self.config.num_layers)])
+				[initial_added[idx].set_shape([self.config.batch_size, self.config.hidden_size]) for idx in xrange(self.config.num_layers)]
+				initial_tuple = tuple([rnn.LSTMStateTuple(initial_added[idx], np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32)) for idx in xrange(self.config.num_layers)])
+			else:
+				initial_added = tf.cond(self.use_meta_placeholder,
+										lambda: embeddings_meta,
+										lambda: self.initial_state_placeholder)
+				initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
+
 			self.encoder_outputs, self.encoder_state = tf.nn.dynamic_rnn(cell=self.cell, inputs=self.encoder_embedded,
-									  sequence_length=self.num_encode ,time_major=True, dtype=tf.float32)
+									  sequence_length=self.num_encode,time_major=True, dtype=tf.float32, initial_state=initial_tuple)
 
 			# Setting up the Attention mechanism
 			attention_states = tf.transpose(self.encoder_outputs, [1, 0, 2])
