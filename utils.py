@@ -5,9 +5,21 @@ import re
 import pickle
 import random
 
+import tensorflow as tf
+
 from collections import Counter
 
 CHECK_DIR = 'checked'
+
+tf_ver = tf.__version__
+SHERLOCK = (str(tf_ver) == '0.12.1')
+
+# for Sherlock
+if SHERLOCK:
+    DIR_MODIFIER = '/scratch/users/nipuna1'
+# for Azure
+else:
+    DIR_MODIFIER = '/data'
 
 # Midi Related
 #------------------------------------
@@ -270,7 +282,8 @@ def passesABC2ABC(fromFile):
 
 	return errorCnt==0
 
-def encoding2ABC(metaList, musicList, outputname=None, vocab_dir='/data/the_session_processed'):
+def encoding2ABC(metaList, musicList, outputname=None, 
+				 vocab_dir=os.path.join(DIR_MODIFIER, 'the_session_processed')):
 	"""
 	Converts lists encoding of .abc song into .abc string
 
@@ -280,8 +293,8 @@ def encoding2ABC(metaList, musicList, outputname=None, vocab_dir='/data/the_sess
 
 	oneHotHeaders = ('R', 'M', 'L')
 
-	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
-	music_map = pickle.load(open('/data/global_map_music.p','rb'))
+	meta_map = pickle.load(open(os.path.join(DIR_MODIFIER, 'full_dataset/global_map_meta.p'),'rb'))
+	music_map = pickle.load(open(os.path.join(DIR_MODIFIER, 'full_dataset/global_map_music.p'),'rb'))
 
 	meta_reverse = {}
 	for header in meta_map.keys():
@@ -372,8 +385,8 @@ def mergeDictionaries(dict1, dict2):
 	return newDict
 
 def randomABCGeneration():
-	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
-	music_map = pickle.load(open('/data/global_map_music.p','rb'))
+	meta_map = pickle.load(open(os.path.join(DIR_MODIFIER, 'full_dataset/global_map_meta.p'),'rb'))
+	music_map = pickle.load(open(os.path.join(DIR_MODIFIER, 'full_dataset/global_map_music.p'),'rb'))
 
 	metaList = []
 	musicList = []
