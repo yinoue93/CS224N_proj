@@ -1,7 +1,10 @@
 import tensorflow as tf
+
 tf_ver = tf.__version__
-if str(tf_ver) != '0.12.1':
+SHERLOCK = (str(tf_ver) == '0.12.1')
+if SHERLOCK:
 	from tensorflow.contrib import rnn
+	from tensorflow.contrib.metrics import confusion_matrix as tf_confusion_matrix
 else:
 	from tensorflow.python.ops import rnn_cell as rnn
 
@@ -105,7 +108,12 @@ class CBOW(object):
 		self.accuracy_op = tf.reduce_mean(boolean_difference)
 		tf.summary.scalar('Accuracy', self.accuracy_op)
 
-		self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
+		self.summary_op = tf.summary.merge_all()
+
+		if SHERLOCK:
+			self.confusion_matrix = tf_confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
+		else:
+			self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
 
 	def _feed_dict(self, feed_values):
 		input_batch = feed_values[0]
@@ -117,9 +125,8 @@ class CBOW(object):
 		return feed_dict
 
 	def run(self, args, session, feed_values):
-		self.summary_op = tf.summary.merge_all()
 		feed_dict = self._feed_dict(feed_values)
-
+		
 		if args.train == "train":
 			_, summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.train_op, self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
 		else: # Sample case not necessary b/c function will only be called during normal runs
@@ -131,6 +138,7 @@ class CBOW(object):
 		# print "Output Prediction Probabilities: {0}".format(probabilities)
 
 		return summary, confusion_matrix, accuracy
+
 
 	def sample(self, session, feed_values):
 		feed_dict = self._feed_dict(feed_values)
@@ -250,7 +258,12 @@ class CharRNN(object):
 		self.accuracy_op = tf.reduce_mean(boolean_difference)
 		tf.summary.scalar('Accuracy', self.accuracy_op)
 
-		self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
+		self.summary_op = tf.summary.merge_all()
+
+		if SHERLOCK:
+			self.confusion_matrix = tf_confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
+		else:
+			self.confusion_matrix = tf.confusion_matrix(tf.reshape(self.label_placeholder, [-1]), tf.reshape(self.prediction_op, [-1]), num_classes=self.config.vocab_size, dtype=tf.int32)
 
 
 	def _feed_dict(self, feed_values):
@@ -272,7 +285,6 @@ class CharRNN(object):
 
 
 	def run(self, args, session, feed_values):
-		self.summary_op = tf.summary.merge_all()
 		feed_dict = self._feed_dict(feed_values)
 
 		if args.train == "train":
