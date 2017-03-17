@@ -112,7 +112,7 @@ def run_model(args):
     probabilities_real_op, probabilities_fake_op = curModel.create_model()
     input_placeholder, label_placeholder, \
         rnn_meta_placeholder, rnn_initial_state_placeholder, \
-                rnn_use_meta_placeholder, train_op_d, train_op_gan = curModel.train()
+            rnn_use_meta_placeholder, train_op_d, train_op_gan = curModel.train()
 
     print "Reading in {0}-set filenames.".format(args.train)
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
@@ -228,27 +228,35 @@ def run_model(args):
                         new_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, meta_batch)
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
-                        num_encode = [window_sz] * 100
-                        num_decode = num_encode[:]
+                        gan_labels = [m[0] for m in meta_batch]
 
-                        feed_values = utils_runtime.pack_feed_values(args, input_window_batch,
-                                                    output_window_batch, meta_batch,
-                                                    initial_state_batch, True,
-                                                    num_encode, num_decode)
+                        feed_dict = {
+                            input_placeholder: input_window_batch,
+                            label_placeholder: gan_labels,
+                            rnn_meta_placeholder: new_meta_batch,
+                            rnn_initial_state_placeholder: initial_state_batch,
+                            rnn_use_meta_placeholder: True
+                        }
 
-                        summary, conf, accuracy = curModel.run(args, session, feed_values)
+                        # summary, conf, accuracy = curModel.run(args, session, feed_values)
 
-                        file_writer.add_summary(summary, step)
+                        if args.train == "train":
+                			_, _ = session.run([train_op_d, train_op_gan], feed_dict=feed_dict)
+                		else: # Sample case not necessary b/c function will only be called during normal runs
+                			# summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
 
-                        # Update confusion matrix
-                        confusion_matrix += conf
 
-                        # Record batch accuracies for test code
-                        if args.train == "test" or args.train == 'dev':
-                            batch_accuracies.append(accuracy)
-
-                        # Processed another batch
-                        step += 1
+                        # file_writer.add_summary(summary, step)
+                        #
+                        # # Update confusion matrix
+                        # confusion_matrix += conf
+                        #
+                        # # Record batch accuracies for test code
+                        # if args.train == "test" or args.train == 'dev':
+                        #     batch_accuracies.append(accuracy)
+                        #
+                        # # Processed another batch
+                        # step += 1
 
                 if args.train == "train":
                     # Checkpoint model - every epoch

@@ -759,7 +759,7 @@ class GenAdversarialNet(object):
 	def train(self):
 		class_loss_weight = 1
 
-		self.gan_logits = tf.concat([self.gan_real_output, self.gan_fake_output],axis=0)
+		self.gan_logits = tf.concat([self.gan_fake_output, self.gan_real_output],axis=0)
 
 		loss_class = tf.reduce_mean(class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.gan_logits,
 					labels=self.label_placeholder))
@@ -784,6 +784,6 @@ class GenAdversarialNet(object):
 		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).apply_gradients(zip(self.gen_grad, [self.generator_model.embeddings_var]))
 
 		print "Completed setup of training mechanism for the GAN...."
-		return self.generator_model.input_placeholder, self.generator_model.label_placeholder, \
+		return self.input_placeholder, self.label_placeholder, \
 				self.generator_model.meta_placeholder, self.generator_model.initial_state_placeholder, \
 				 self.generator_model.use_meta_placeholder, self.train_op_d, self.train_op_gan
