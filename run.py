@@ -109,6 +109,7 @@ def sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, m
                                 num_encode, num_encode)
     # logits, state = curModel.sample(session, feed_values)
     prediction = curModel.sample(session, feed_values)
+    # print len(prediction[0])
     return prediction
 
 
@@ -154,7 +155,7 @@ def sampleCBOW(session, args, curModel, vocabulary_decode):
 
 
 def run_model(args):
-    use_seq2seq_data = (args.model == 'seq2seq' or args.model == 'gan')
+    use_seq2seq_data = (args.model == 'seq2seq')
     if args.data_dir != '':
         dataset_dir = args.data_dir
     elif args.train == 'train':
@@ -191,8 +192,9 @@ def run_model(args):
 
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
+    meta_vocabulary = reader.read_abc_pickle(META_DATA)
 
-    start_encode = vocabulary["<start>"] if args.train != "sample" else vocabulary["<go>"]
+    start_encode = vocabulary["<go>"] if (args.train == "sample" and use_seq2seq_data) else vocabulary["<start>"]
     end_encode = vocabulary["<end>"]
     # Getting meta mapping:
     meta_map = pickle.load(open(META_DATA, 'rb'))
@@ -256,14 +258,22 @@ def run_model(args):
             warm_length = 20
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
 
-            warm_meta_array = [warm_meta[:] for idx in xrange(3)]
+            warm_meta_array = [warm_meta[:] for idx in xrange(5)]
+
             # Change Key
             warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
             # Change Number of Flats/Sharps
-            warm_meta_array[1][3] = np.random.choice(11)
+            warm_meta_array[2][3] = np.random.choice(11)
+            # Lower Complexity
+            warm_meta_array[3][6] = 50
+            # Higher Complexity
+            warm_meta_array[4][6] = 350
+
+            new_warm_meta = utils_runtime.encode_meta_batch(meta_vocabulary, warm_meta_array)
+            new_warm_meta_array = zip(warm_meta_array, new_warm_meta)
 
             print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
-            for meta in warm_meta_array:
+            for old_meta, meta in new_warm_meta_array:
                 print "Current Metadata: {0}".format(meta)
                 generated = warm_chars[:]
 
@@ -288,7 +298,7 @@ def run_model(args):
 
                     # Sample
                     sampled_character = utils_runtime.sample_with_temperature(logits, TEMPERATURE)
-                    while sampled_character != 81 and len(generated) < 200:
+                    while sampled_character != vocabulary["<end>"] and len(generated) < 100:
                         if cell_type == 'lstm':
                             initial_state_sample = []
                             for lstm_tuple in state:
@@ -311,10 +321,9 @@ def run_model(args):
 
 
                 decoded_characters = [vocabulary_decode[char] for char in generated]
-                print decoded_characters
 
                 # Currently chopping off the last char regardless if its <end> or not
-                encoding = utils.encoding2ABC(meta, generated[1:-1])
+                encoding = utils.encoding2ABC(old_meta, generated)
 
         # Train, dev, test model
         else:
@@ -328,13 +337,14 @@ def run_model(args):
                     data_batches = reader.abc_batch(data, n=batch_size)
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
+                        new_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, meta_batch)
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
                         num_encode = [window_sz] * 100
                         num_decode = num_encode[:]
 
                         feed_values = utils_runtime.pack_feed_values(args, input_window_batch,
-                                                    output_window_batch, meta_batch,
+                                                    output_window_batch, new_meta_batch,
                                                     initial_state_batch, True,
                                                     num_encode, num_decode)
 
@@ -372,18 +382,17 @@ def run_model(args):
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
 
+
 def main(_):
 
     args = utils_runtime.parseCommandLine()
-    if args.model == 'gan':
-        run_gan(args)
-    else:
-        run_model(args)
+    run_model(args)
 
     if args.train != "sample":
         if tf.gfile.Exists(SUMMARY_DIR):
             tf.gfile.DeleteRecursively(SUMMARY_DIR)
         tf.gfile.MakeDirs(SUMMARY_DIR)
+
 
 if __name__ == "__main__":
     tf.app.run()

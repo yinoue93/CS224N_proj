@@ -3,6 +3,7 @@ import os
 import random
 import numpy as np
 from argparse import ArgumentParser
+import reader
 
 import tensorflow as tf
 from utils_preprocess import *
@@ -124,6 +125,18 @@ def save_checkpoint(args, session, saver, i):
     # saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
 
 
+def encode_meta_batch(meta_vocabulary, meta_batch):
+    new_meta_batch = []
+    vocab_lengths = [0] + [len(small_vocab) for small_vocab in meta_vocabulary.values()]
+    num_values = len(meta_vocabulary.values())
+
+    for meta_data in meta_batch:
+        new_meta_data = [meta_data[i] + sum(vocab_lengths[:i+1]) for i in xrange(num_values)]
+        new_meta_data = np.append(new_meta_data, meta_data[5:])
+        new_meta_batch.append(new_meta_data)
+    return new_meta_batch
+
+
 def pack_feed_values(args, input_batch, label_batch, meta_batch,
                             initial_state_batch, use_meta_batch, num_encode, num_decode):
     if (args.train != "sample"):
@@ -162,7 +175,7 @@ def parseCommandLine():
 
     print("Parsing Command Line Arguments...")
     requiredModel = parser.add_argument_group('Required Model arguments')
-    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "cbow", "gan"], type = str,
+    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "cbow"], type = str,
     					dest = 'model', required = True, help = 'Type of model to run')
     requiredTrain = parser.add_argument_group('Required Train/Test arguments')
     requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,
@@ -175,7 +188,7 @@ def parseCommandLine():
     parser.add_argument('-e', dest='num_epochs', default=50, type=int, help='Set the number of Epochs')
     parser.add_argument('-ckpt', dest='ckpt_dir', default=DIR_MODIFIER + '/temp_ckpt/', type=str, help='Set the checkpoint directory')
     parser.add_argument('-data', dest='data_dir', default='', type=str, help='Set the data directory')
-    
+
     args = parser.parse_args()
     return args
 
