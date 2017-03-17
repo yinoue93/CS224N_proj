@@ -126,16 +126,16 @@ def save_checkpoint(args, session, saver, i):
 
 def pack_feed_values(args, input_batch, label_batch, meta_batch,
                             initial_state_batch, use_meta_batch, num_encode, num_decode):
-    if (args.model == 'seq2seq') and (args.train != "sample"):
+    if (args.train != "sample"):
         for i, input_b in enumerate(input_batch):
-            if input_b.shape[0] != 25:
+            if input_b.shape[0] != 50:
                 print "Input batch {0} contains and examples of size {1}".format(i, input_b.shape[0])
-                input_batch[i] = np.zeros(25)
+                input_batch[i] = np.zeros(50)
 
         for j, label_b in enumerate(label_batch):
-            if label_b.shape[0] != 25:
+            if label_b.shape[0] != 50:
                 print "Output batch {0} contains and examples of size {1}".format(j, label_b.shape[0])
-                label_batch[j] = np.zeros(25)
+                label_batch[j] = np.zeros(50)
     packed = []
 
     input_batch = np.stack(input_batch)

@@ -88,7 +88,11 @@ def runHyperparam(paramTxtF, dataset):
 				paramDict['hidden_size'] = par*5
 				paramStrList.append('hidden_size: %f' %(par*5))
 			
-			paramStrList.append('%s: %f' %(name,par))
+			# there is probably a more elegant way to do this...
+			try:
+				paramStrList.append('%s: %f' %(name,par))
+			except:
+				paramStrList.append('%s: %s' %(name,par))
 
 		paramStr = ','.join(paramStrList) + '\n'
 
