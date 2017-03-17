@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import sys
-from models import CharRNN, Config, Seq2SeqRNN, CBOW
+from models import CharRNN, Config, Seq2SeqRNN, CBOW, GenAdversarialNet
 # from utils_preprocess import hdf52dict
 import pickle
 import reader
@@ -72,16 +72,17 @@ def run_gan(args):
     # cell_type = 'gru'
     # cell_type = 'rnn'
 
-    gan_label_size = len(meta_map['R'])
-    curModel = GenAdversarialNet(input_size, gan_label_size,
-                                args.train=='train', batch_size, cell_type,
+    num_classes = len(meta_map['R'])
+    gan_label_size = 1
+    curModel = GenAdversarialNet(input_size, gan_label_size, num_classes, cell_type,
+                                args.train=='train', batch_size, vocabulary_size,
                                  args.set_config, use_lrelu=True, use_batchnorm=False,
                                  dropout=None)
 
     probabilities_real_op, probabilities_fake_op = curModel.create_model()
-    self.input_placeholder, self.label_placeholder, \
-                self.rnn_meta_placeholder, self.rnn_initial_state_placeholder, \
-                 self.rnn_use_meta_placeholder, self.train_op_d, self.train_op_gan = curModel.train()
+    input_placeholder, label_placeholder, \
+        rnn_meta_placeholder, rnn_initial_state_placeholder, \
+                rnn_use_meta_placeholder, train_op_d, train_op_gan = curModel.train()
 
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
 
@@ -230,18 +231,6 @@ def run_gan(args):
 
                 # Plot Confusion Matrix
                 utils_runtime.plot_confusion(confusion_matrix, vocabulary, confusion_suffix, characters_remove=['|', '2'])
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

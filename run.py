@@ -6,7 +6,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import sys
-from models import CharRNN, Config, Seq2SeqRNN, CBOW
+from models import CharRNN, Config, Seq2SeqRNN, CBOW, GenAdversarialNet
 import pickle
 import reader
 import random
@@ -371,18 +371,6 @@ def run_model(args):
                 # Plot Confusion Matrix
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def main(_):
