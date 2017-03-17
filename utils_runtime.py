@@ -126,7 +126,7 @@ def save_checkpoint(args, session, saver, i):
 
 def pack_feed_values(args, input_batch, label_batch, meta_batch,
                             initial_state_batch, use_meta_batch, num_encode, num_decode):
-    if args.train != "sample":
+    if (args.model == 'seq2seq') and (args.train != "sample"):
         for i, input_b in enumerate(input_batch):
             if input_b.shape[0] != 25:
                 print "Input batch {0} contains and examples of size {1}".format(i, input_b.shape[0])
@@ -174,6 +174,8 @@ def parseCommandLine():
     parser.add_argument('-o', dest='override', action="store_true", help='Override the checkpoints')
     parser.add_argument('-e', dest='num_epochs', default=50, type=int, help='Set the number of Epochs')
     parser.add_argument('-ckpt', dest='ckpt_dir', default=DIR_MODIFIER + '/temp_ckpt/', type=str, help='Set the checkpoint directory')
+    parser.add_argument('-data', dest='data_dir', default='', type=str, help='Set the data directory')
+    
     args = parser.parse_args()
     return args
 

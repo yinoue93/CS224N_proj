@@ -13,6 +13,7 @@ import random
 import utils_runtime
 import utils_hyperparam
 import utils
+import re
 
 tf_ver = tf.__version__
 SHERLOCK = (str(tf_ver) == '0.12.1')
@@ -39,7 +40,7 @@ GAN_DEVELOPMENT_DATA = DIR_MODIFIER + '/full_dataset/gan_dataset/nn_input_dev_st
 VOCAB_DATA = DIR_MODIFIER + '/full_dataset/global_map_music.p'
 META_DATA = DIR_MODIFIER + '/full_dataset/global_map_meta.p'
 
-SUMMARY_DIR = DIR_MODIFIER + '/cbow_summary'
+SUMMARY_DIR = DIR_MODIFIER + '/summary'
 
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
@@ -153,21 +154,32 @@ def sampleCBOW(session, args, curModel, vocabulary_decode):
 
 
 def run_model(args):
-    input_size = 1 if (args.train == "sample" and args.model!='cbow') else 25
-    initial_size = 7
-    label_size = 1 if args.train == "sample" else 25
-    batch_size = 1 if args.train == "sample" else BATCH_SIZE
-    NUM_EPOCHS = args.num_epochs
-    print "Using checkpoint directory: {0}".format(args.ckpt_dir)
-
     use_seq2seq_data = (args.model == 'seq2seq' or args.model == 'gan')
-    if args.train == 'train':
+    if args.data_dir != '':
+        dataset_dir = args.data_dir
+    elif args.train == 'train':
         dataset_dir = GAN_TRAIN_DATA if use_seq2seq_data else TRAIN_DATA
     elif args.train == 'test':
         dataset_dir = GAN_TEST_DATA if use_seq2seq_data else TEST_DATA
     else: # args.train == 'dev' or 'sample' (which has no dataset, but we just read anyway)
         dataset_dir = GAN_DEVELOPMENT_DATA if use_seq2seq_data else DEVELOPMENT_DATA
+
+    print 'Using dataset %s' %dataset_dir
     dateset_filenames = reader.abc_filenames(dataset_dir)
+
+    # figure out the input data size
+    window_sz = int(re.findall('[0-9]+', re.findall('window_[0-9]+', dataset_dir)[0])[0])
+    if 'output_sz' in dataset_dir:
+        label_sz = int(re.findall('[0-9]+', re.findall('output_sz_[0-9]+', dataset_dir)[0])[0])
+    else:
+        label_sz = window_sz
+
+    input_size = 1 if (args.train == "sample" and args.model!='cbow') else window_sz
+    initial_size = 7
+    label_size = 1 if args.train == "sample" else label_sz
+    batch_size = 1 if args.train == "sample" else BATCH_SIZE
+    NUM_EPOCHS = args.num_epochs
+    print "Using checkpoint directory: {0}".format(args.ckpt_dir)
 
     # Getting vocabulary mapping:
     vocabulary = reader.read_abc_pickle(VOCAB_DATA)
@@ -318,7 +330,7 @@ def run_model(args):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
-                        num_encode = [25] * 100
+                        num_encode = [window_sz] * 100
                         num_decode = num_encode[:]
 
                         feed_values = utils_runtime.pack_feed_values(args, input_window_batch,
@@ -359,7 +371,6 @@ def run_model(args):
                 # Plot Confusion Matrix
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
-
 
 
 

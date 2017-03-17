@@ -5,7 +5,11 @@ SHERLOCK = (str(tf_ver) == '0.12.1')
 
 from tensorflow.contrib import rnn
 if SHERLOCK:
+	from tensorflow.python.ops import rnn_cell as rnn
 	from tensorflow.contrib.metrics import confusion_matrix as tf_confusion_matrix
+else:
+	from tensorflow.contrib import rnn
+
 
 from tensorflow.contrib import seq2seq
 import numpy as np
@@ -247,7 +251,8 @@ class CharRNN(object):
 
 	def metrics(self):
 		# Same function, did not make a general one b/c need to store _ops within class
-		self.prediction_op = tf.to_int32(tf.argmax(self.probabilities_op, axis=-1))
+		last_axis = len(self.probabilities_op.get_shape().as_list())
+		self.prediction_op = tf.to_int32(tf.argmax(self.probabilities_op, axis=last_axis-1))
 		difference = self.label_placeholder - self.prediction_op
 		zero = tf.constant(0, dtype=tf.int32)
 		boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
