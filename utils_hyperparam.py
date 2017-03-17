@@ -95,11 +95,7 @@ def runHyperparam(paramTxtF, dataset):
 		for name,par in zip(nameList,param):
 			paramDict[name] = par
 			
-			# there is probably a more elegant way to do this...
-			try:
-				paramStrList.append('%s: %f' %(name,par))
-			except:
-				paramStrList.append('%s: %s' %(name,par))
+			paramStrList.append('{}: {}'.format(name, par))
 
 		paramStr = ','.join(paramStrList) + '\n'
 
