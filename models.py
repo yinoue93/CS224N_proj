@@ -192,7 +192,7 @@ class CharRNN(object):
 		embeddings_var = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
 										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
 		true_inputs = self.input_placeholder if (self.gan_inputs == None) else self.gan_inputs
-
+		self.embeddings_var = embeddings_var
 		embeddings = tf.nn.embedding_lookup(embeddings_var, true_inputs)
 
 		# Embedding lookup for Metadata
@@ -409,11 +409,11 @@ class Seq2SeqRNN(object):
 									  sequence_length=self.num_encode,time_major=True, dtype=tf.float32, initial_state=initial_tuple)
 			else:
 				encoder_fw_outputs,encoder_bw_outputs,
-             	encoder_fw_state, encoder_bw_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.cell,
-                                                cell_bw=self.cell, inputs=self.encoder_embedded,
-                                                sequence_length=self.num_encode, time_major=True, dtype=tf.float32)
-             	self.encoder_outputs = tf.concat((encoder_fw_outputs, encoder_bw_outputs), 2)
-             	if isinstance(encoder_fw_state, LSTMStateTuple):
+				encoder_fw_state, encoder_bw_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.cell,
+				                            cell_bw=self.cell, inputs=self.encoder_embedded,
+				                            sequence_length=self.num_encode, time_major=True, dtype=tf.float32)
+				self.encoder_outputs = tf.concat((encoder_fw_outputs, encoder_bw_outputs), 2)
+				if isinstance(encoder_fw_state, LSTMStateTuple):
 					encoder_state_c = tf.concat( (encoder_fw_state.c, encoder_bw_state.c), 1, name='bidirectional_concat_c')
 					encoder_state_h = tf.concat( (encoder_fw_state.h, encoder_bw_state.h), 1, name='bidirectional_concat_h')
 					self.encoder_state = LSTMStateTuple(c=encoder_state_c, h=encoder_state_h)
@@ -756,11 +756,13 @@ class GenAdversarialNet(object):
 
 		combined_labels = tf.expand_dims(combined_labels, -1)
 		combined_labels = tf.expand_dims(combined_labels, -1)
-		prob_grads = tf.multiply(combined_labels, tf.nn.softmax(self.generator_output))
+		# prob_grads = tf.multiply(combined_labels, tf.nn.softmax(self.generator_output))
 
+		self.policy_grads = combined_labels*tf.one_hot(self.current_policy[:,:,0], depth=self.config.vocab_size)*self.generator_output
 		self.d_gen_grad = tf.gradients(tot_d_loss, self.embeddings_disc)
+		self.gen_grad = tf.gradients(self.policy_grads, self.generator_model.embeddings_var)
 		self.train_op_d = tf.train.AdamOptimizer(self.config.gan_lr).apply_gradients(zip(self.d_gen_grad, [self.embeddings_disc]))
-		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).minimize(prob_grads)
+		self.train_op_gan = tf.train.AdamOptimizer(self.config.gan_lr).apply_gradients(zip(self.gen_grad, [self.generator_model.embeddings_var]))
 
 		print "Completed setup of training mechanism for the GAN...."
 		return self.generator_model.input_placeholder, self.generator_model.label_placeholder, \
