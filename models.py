@@ -339,13 +339,16 @@ class Seq2SeqRNN(object):
 		self.num_decode = tf.placeholder(tf.int32, shape=(None,),  name='Num_decode')
 
 		if cell_type == 'rnn':
-			self.cell = rnn.BasicRNNCell(self.config.hidden_size)
+			self.encoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
+			self.decoder_cell = rnn.BasicRNNCell(2*self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'gru':
-			self.cell = rnn.GRUCell(self.config.hidden_size)
+			self.encoder_cell = rnn.GRUCell(self.config.hidden_size)
+			self.decoder_cell = rnn.GRUCell(2*self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'lstm':
-			self.cell = rnn.BasicLSTMCell(self.config.hidden_size)
+			self.encoder_cell = rnn.BasicLSTMCell(self.config.hidden_size)
+			self.decoder_cell = rnn.BasicLSTMCell(self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[self.config.num_layers, None, self.config.hidden_size], name="Initial_State")
 
 		print "Completed Initializing the Seq2Seq RNN Model using a {0} cell".format(cell_type.upper())
@@ -364,9 +367,11 @@ class Seq2SeqRNN(object):
 				return tf.contrib.layers.linear(outputs, self.config.vocab_size, scope=scope)
 
 			if is_train:
-				self.cell = rnn.DropoutWrapper(self.cell, input_keep_prob=1.0, output_keep_prob=self.config.keep_prob)
+				self.encoder_cell = rnn.DropoutWrapper(self.encoder_cell, input_keep_prob=1.0, output_keep_prob=self.config.keep_prob)
+				self.decoder_cell = rnn.DropoutWrapper(self.decoder_cell, input_keep_prob=1.0, output_keep_prob=self.config.keep_prob)
 
-			self.cell = rnn.MultiRNNCell([self.cell]*self.config.num_layers, state_is_tuple=True)
+			self.encoder_cell = rnn.MultiRNNCell([self.encoder_cell]*self.config.num_layers, state_is_tuple=True)
+			self.decoder_cell = rnn.MultiRNNCell([self.decoder_cell]*self.config.num_layers, state_is_tuple=True)
 
 			# GO_SLICE = tf.ones([tf.shape(self.input_placeholder)[0],1], dtype=tf.int32)*self.start_encode
 
@@ -413,25 +418,30 @@ class Seq2SeqRNN(object):
 				initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
 
 			if not self.config.bidirectional:
-				self.encoder_outputs, self.encoder_state = tf.nn.dynamic_rnn(cell=self.cell, inputs=self.encoder_embedded,
+				self.encoder_outputs, self.encoder_state = tf.nn.dynamic_rnn(cell=self.encoder_cell, inputs=self.encoder_embedded,
 									  sequence_length=self.num_encode,time_major=True, dtype=tf.float32, initial_state=initial_tuple)
 			else:
-				encoder_fw_outputs,encoder_bw_outputs,
-				encoder_fw_state, encoder_bw_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.cell,
-				                            cell_bw=self.cell, inputs=self.encoder_embedded,
-				                            sequence_length=self.num_encode, time_major=True, dtype=tf.float32)
+				((encoder_fw_outputs,encoder_bw_outputs),\
+				(encoder_fw_state, encoder_bw_state)) = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.encoder_cell,
+				                            cell_bw=self.encoder_cell, inputs=self.encoder_embedded,initial_state_fw=initial_tuple,
+				                            initial_state_bw=initial_tuple,sequence_length=self.num_encode, time_major=True, dtype=tf.float32)
 
 				self.encoder_outputs = tf.concat((encoder_fw_outputs, encoder_bw_outputs), 2)
-				if isinstance(encoder_fw_state, LSTMStateTuple):
-					encoder_state_c = tf.concat( (encoder_fw_state.c, encoder_bw_state.c), 1, name='bidirectional_concat_c')
-					encoder_state_h = tf.concat( (encoder_fw_state.h, encoder_bw_state.h), 1, name='bidirectional_concat_h')
-					self.encoder_state = LSTMStateTuple(c=encoder_state_c, h=encoder_state_h)
 
-				elif isinstance(encoder_fw_state, tf.Tensor):
+				if isinstance(encoder_fw_state, tuple):
+					encoder_state_c = tf.concat( (encoder_fw_state[0], encoder_bw_state[1]), 1, name='bidirectional_concat_c')
+					encoder_state_h = tf.concat( (encoder_fw_state[0], encoder_bw_state[1]), 1, name='bidirectional_concat_h')
+					self.encoder_state = rnn.LSTMStateTuple(c=encoder_state_c, h=encoder_state_h)
+
+				else:
 					self.encoder_state = tf.concat((encoder_fw_state, encoder_bw_state), 1, name='bidirectional_concat')
 
+				self.encoder_outputs = encoder_fw_outputs
+				self.encoder_state = encoder_fw_state
 
 			# Setting up the Attention mechanism
+			# print type(self.encoder_outputs)
+			# print type(self.encoder_state)
 			attention_states = tf.transpose(self.encoder_outputs, [1, 0, 2])
 
 			attention_keys, attention_values, attention_score_fn, \
@@ -450,7 +460,7 @@ class Seq2SeqRNN(object):
 						maximum_length=tf.reduce_max(self.num_encode) + 3, num_decoder_symbols=self.config.vocab_size)
 
 			self.decoder_outputs_train, self.decoder_state_train, \
-			self.decoder_context_state_train =  seq2seq.dynamic_rnn_decoder( cell=self.cell,
+			self.decoder_context_state_train =  seq2seq.dynamic_rnn_decoder( cell=self.decoder_cell,
 						decoder_fn=decoder_fn_train, inputs=self.decoder_inputs_embedded,
 						sequence_length=self.num_decode, time_major=True, scope=scope)
 
@@ -462,7 +472,7 @@ class Seq2SeqRNN(object):
 			scope.reuse_variables()
 
 			self.decoder_logits_inference, self.decoder_state_inference, \
-			self.decoder_context_state_inference = seq2seq.dynamic_rnn_decoder(cell=self.cell,
+			self.decoder_context_state_inference = seq2seq.dynamic_rnn_decoder(cell=self.decoder_cell,
 					decoder_fn=decoder_fn_inference, time_major=True, scope=scope)
 
 
