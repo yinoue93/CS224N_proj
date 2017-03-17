@@ -5,7 +5,11 @@ SHERLOCK = (str(tf_ver) == '0.12.1')
 
 from tensorflow.contrib import rnn
 if SHERLOCK:
+	from tensorflow.python.ops import rnn_cell as rnn
 	from tensorflow.contrib.metrics import confusion_matrix as tf_confusion_matrix
+else:
+	from tensorflow.contrib import rnn
+
 
 from tensorflow.contrib import seq2seq
 import numpy as np
@@ -248,7 +252,8 @@ class CharRNN(object):
 
 	def metrics(self):
 		# Same function, did not make a general one b/c need to store _ops within class
-		self.prediction_op = tf.to_int32(tf.argmax(self.probabilities_op, axis=-1))
+		last_axis = len(self.probabilities_op.get_shape().as_list())
+		self.prediction_op = tf.to_int32(tf.argmax(self.probabilities_op, axis=last_axis-1))
 		difference = self.label_placeholder - self.prediction_op
 		zero = tf.constant(0, dtype=tf.int32)
 		boolean_difference = tf.cast(tf.equal(difference, zero), tf.float64)
@@ -412,6 +417,7 @@ class Seq2SeqRNN(object):
 				encoder_fw_state, encoder_bw_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.cell,
 				                            cell_bw=self.cell, inputs=self.encoder_embedded,
 				                            sequence_length=self.num_encode, time_major=True, dtype=tf.float32)
+				
 				self.encoder_outputs = tf.concat((encoder_fw_outputs, encoder_bw_outputs), 2)
 				if isinstance(encoder_fw_state, LSTMStateTuple):
 					encoder_state_c = tf.concat( (encoder_fw_state.c, encoder_bw_state.c), 1, name='bidirectional_concat_c')
@@ -605,18 +611,18 @@ class Discriminator(object):
 			layer_flatten = tf.reshape(conv_layer3, [-1, numParams])
 
 			fully_conn_weights_1 = tf.get_variable("weights_fully_conn_1", [numParams, self.config.hidden_units],
-        								initializer=tf.random_normal_initializer())
+										initializer=tf.random_normal_initializer())
 			fully_conn_bias_1 = tf.get_variable("bias_fully_conn_1", [self.config.hidden_units,],
-        								initializer=tf.random_normal_initializer())
+										initializer=tf.random_normal_initializer())
 			layer4 = tf.matmul(layer_flatten,fully_conn_weights_1 ) + fully_conn_bias_1
 
 			if self.dropout is not None and self.is_training == True:
 				layer4 = tf.nn.dropout(layer4, self.dropout)
 
 			fully_conn_weights_2 = tf.get_variable("weights_fully_conn_2", [self.config.hidden_units,self.labels_size ],
-        								initializer=tf.random_normal_initializer())
+										initializer=tf.random_normal_initializer())
 			fully_conn_bias_2 = tf.get_variable("bias_fully_conn_2", [self.labels_size,],
-        								initializer=tf.random_normal_initializer())
+										initializer=tf.random_normal_initializer())
 			layer5 = tf.matmul(layer4,fully_conn_weights_2 ) + fully_conn_bias_2
 
 			self.output = layer5
@@ -664,13 +670,13 @@ class GenAdversarialNet(object):
 
 	# Function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
 	def sigmoid_kl_with_logits(self, logits, targets):
-    # broadcasts the same target value across the whole batch
-    # this is implemented so awkwardly because tensorflow lacks an x log x op
-	    if targets in [0., 1.]:
-	        entropy = 0.
-	    else:
-	        entropy = - targets * np.log(targets) - (1. - targets) * np.log(1. - targets)
-	    return tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.ones_like(logits) * targets) - entropy
+	# broadcasts the same target value across the whole batch
+	# this is implemented so awkwardly because tensorflow lacks an x log x op
+		if targets in [0., 1.]:
+			entropy = 0.
+		else:
+			entropy = - targets * np.log(targets) - (1. - targets) * np.log(1. - targets)
+		return tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.ones_like(logits) * targets) - entropy
 
 	# Ideas for function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
 	def normalize_class_outputs(self,logits):
@@ -730,7 +736,7 @@ class GenAdversarialNet(object):
 
 		self.gan_pred_real = self.sigmoid_kl_with_logits(self.gan_logits_real, 1. - self.config.label_smooth)
 		self.gan_pred_fake = tf.nn.sigmoid_cross_entropy_with_logits(logits=self.gan_logits_fake,
-            					labels=tf.zeros_like(self.gan_logits_fake))
+								labels=tf.zeros_like(self.gan_logits_fake))
 
 		print("Built the GAN Model...")
 		return self.gan_pred_real, self.gan_pred_fake
@@ -743,7 +749,7 @@ class GenAdversarialNet(object):
 		self.gan_logits = tf.concat([self.gan_real_output, self.gan_fake_output],axis=0)
 
 		loss_class = tf.reduce_mean(class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.gan_logits,
-            		labels=self.label_placeholder))
+					labels=self.label_placeholder))
 
 		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake) +  loss_class
 		# tot_g_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.generator_output, 

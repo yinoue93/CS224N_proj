@@ -41,18 +41,21 @@ def parseHyperTxt(paramTxtF):
 
 			name,start,end,step = [s.strip() for s in line.split(',')]
 
-			params = list(np.arange(float(start),float(end),float(step)))
-			params = [round(a,5) for a in params]
-			# python list is not inclusive
-			if params[-1]!=float(end):
-				params.append(float(end))
+			if float(start) == float(end):
+				params = [float(start)]
+			else:
+				params = list(np.arange(float(start),float(end),float(step)))
+				params = [round(a,5) for a in params]
+				# python list is not inclusive
+				if params[-1]!=float(end):
+					params.append(float(end))
 
 			nameList.append(name)
 			paramList.append(params)
 
 	return modelType,num_epochs,nameList,paramList
 
-def runHyperparam(paramTxtF):
+def runHyperparam(paramTxtF, dataset):
 	"""
 	Runs the gridsearch for hyperparameter tuning search.
 	The grids are as defined in @paramTxtF
@@ -68,6 +71,9 @@ def runHyperparam(paramTxtF):
 	param_all_combos = list(itertools.product(*paramList))
 
 	print '[INFO] There are %d combinations of hyperparameters...' %len(param_all_combos)
+
+	dataset_train = dataset
+	dataset_dev = dataset.replace('train','dev')
 
 	count = 0
 	for param in param_all_combos:
@@ -98,12 +104,22 @@ def runHyperparam(paramTxtF):
 
 		# train the model using the new hyperparameters
 		print '-'*30 + 'TRAINING' + '-'*30
-		cmd = 'python run.py -p train -o -ckpt %s -m %s -e %d -c %s' %(DEV_CKPT_DIR, modelType, num_epochs, TMP_HYPER_PICKLE)
+		if dataset=='':
+			cmd = 'python run.py -p train -o -ckpt %s -m %s -e %d -c %s' \
+								%(DEV_CKPT_DIR, modelType, num_epochs, TMP_HYPER_PICKLE)
+		else:
+			cmd = 'python run.py -p train -o -ckpt %s -m %s -e %d -c %s -data %s' \
+								%(DEV_CKPT_DIR, modelType, num_epochs, TMP_HYPER_PICKLE, dataset_train)
 		os.system(cmd)
 
 		# test the model on the dev set
 		print '-'*30 + 'TESTING DEV' + '-'*30
-		cmd = 'python run.py -p dev -ckpt %s -m %s -c %s' %(DEV_CKPT_DIR, modelType, TMP_HYPER_PICKLE)
+		if dataset=='':
+			cmd = 'python run.py -p dev -ckpt %s -m %s -c %s' \
+								%(DEV_CKPT_DIR, modelType, TMP_HYPER_PICKLE)
+		else:
+			cmd = 'python run.py -p dev -ckpt %s -m %s -c %s -data %s' \
+								%(DEV_CKPT_DIR, modelType, TMP_HYPER_PICKLE, dataset_dev)
 		os.system(cmd)
 
 	os.remove(TMP_HYPER_PICKLE)
@@ -199,6 +215,8 @@ if __name__ == "__main__":
 						dest = 'mode', required = True, help = 'Specify which mode to run')
 	parser.add_argument('-f', type = str, default='', 
 						dest = 'filename', help = 'Filename to read results from')
+	parser.add_argument('-data', type = str, default='', 
+						dest = 'dataset', help = 'Dataset to run run.py')
 	parser.add_argument('-n', type = int, default=3,
 						dest = 'top_N', help = 'Top N accuracies')
 
@@ -206,6 +224,6 @@ if __name__ == "__main__":
 
 	if args.mode == 'tune':
 		hyperparamTxt = 'hyperparameters.txt'
-		runHyperparam(hyperparamTxt)
+		runHyperparam(hyperparamTxt, args.dataset)
 	elif args.mode == 'results':
 		resultParser(args.filename, args.top_N)
