@@ -3,6 +3,7 @@ import pickle
 import os
 import datetime
 import re
+import ast
 import tensorflow as tf
 
 from argparse import ArgumentParser
@@ -39,16 +40,21 @@ def parseHyperTxt(paramTxtF):
 				count += 1
 				continue
 
-			name,start,end,step = [s.strip() for s in line.split(',')]
-
-			if float(start) == float(end):
-				params = [float(start)]
+			if '[' in line:
+				name = [s.strip() for s in line.split(',')][0]
+				listStr = line[line.find('['):(line.rfind(']')+1)]
+				params = ast.literal_eval(listStr)
 			else:
-				params = list(np.arange(float(start),float(end),float(step)))
-				params = [round(a,5) for a in params]
-				# python list is not inclusive
-				if params[-1]!=float(end):
-					params.append(float(end))
+				name,start,end,step = [s.strip() for s in line.split(',')]
+
+				if float(start) == float(end):
+					params = [float(start)]
+				else:
+					params = list(np.arange(float(start),float(end),float(step)))
+					params = [round(a,5) for a in params]
+					# python list is not inclusive
+					if params[-1]!=float(end):
+						params.append(float(end))
 
 			nameList.append(name)
 			paramList.append(params)
@@ -227,7 +233,7 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 
 	if args.mode == 'tune':
-		hyperparamTxt = 'hyperparameters.txt'
+		hyperparamTxt = 'hparams_seq2seq.txt'
 		runHyperparam(hyperparamTxt, args.dataset)
 	elif args.mode == 'results':
 		resultParser(args.filename, args.top_N)
