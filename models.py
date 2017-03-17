@@ -310,13 +310,14 @@ class CharRNN(object):
 class Seq2SeqRNN(object):
 
 	def __init__(self,input_size, label_size, batch_size, vocab_size, cell_type,
-						hyperparam_path, start_encode, end_encode):
+						hyperparam_path, start_encode, end_encode, bidirectional=False):
 		self.input_size = input_size
 		self.label_size = label_size
 		self.cell_type = cell_type
 		self.config = Config(hyperparam_path)
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
+		self.bidirectional = bidirectional
 
 		# input_shape = (None,) + tuple([input_size])
 		input_shape = (None, None)
@@ -403,8 +404,23 @@ class Seq2SeqRNN(object):
 										lambda: self.initial_state_placeholder)
 				initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
 
-			self.encoder_outputs, self.encoder_state = tf.nn.dynamic_rnn(cell=self.cell, inputs=self.encoder_embedded,
+			if not bidirectional:
+				self.encoder_outputs, self.encoder_state = tf.nn.dynamic_rnn(cell=self.cell, inputs=self.encoder_embedded,
 									  sequence_length=self.num_encode,time_major=True, dtype=tf.float32, initial_state=initial_tuple)
+			else:
+				encoder_fw_outputs,encoder_bw_outputs,
+             	encoder_fw_state, encoder_bw_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.cell,
+                                                cell_bw=self.cell, inputs=self.encoder_embedded,
+                                                sequence_length=self.num_encode, time_major=True, dtype=tf.float32)
+             	self.encoder_outputs = tf.concat((encoder_fw_outputs, encoder_bw_outputs), 2)
+             	if isinstance(encoder_fw_state, LSTMStateTuple):
+					encoder_state_c = tf.concat( (encoder_fw_state.c, encoder_bw_state.c), 1, name='bidirectional_concat_c')
+					encoder_state_h = tf.concat( (encoder_fw_state.h, encoder_bw_state.h), 1, name='bidirectional_concat_h')
+					self.encoder_state = LSTMStateTuple(c=encoder_state_c, h=encoder_state_h)
+
+				elif isinstance(encoder_fw_state, tf.Tensor):
+					self.encoder_state = tf.concat((encoder_fw_state, encoder_bw_state), 1, name='bidirectional_concat')
+
 
 			# Setting up the Attention mechanism
 			attention_states = tf.transpose(self.encoder_outputs, [1, 0, 2])
