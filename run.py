@@ -191,6 +191,7 @@ def run_model(args):
 
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
+    meta_vocabulary = reader.read_abc_pickle(META_DATA)
 
     start_encode = vocabulary["<start>"] if args.train != "sample" else vocabulary["<go>"]
     end_encode = vocabulary["<end>"]
@@ -328,6 +329,7 @@ def run_model(args):
                     data_batches = reader.abc_batch(data, n=batch_size)
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
+                        new_meta_batch = utils_runtime.encode_meta(meta_vocabulary, meta_batch)
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
                         num_encode = [window_sz] * 100
@@ -384,6 +386,7 @@ def main(_):
         if tf.gfile.Exists(SUMMARY_DIR):
             tf.gfile.DeleteRecursively(SUMMARY_DIR)
         tf.gfile.MakeDirs(SUMMARY_DIR)
+
 
 if __name__ == "__main__":
     tf.app.run()

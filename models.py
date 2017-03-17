@@ -27,11 +27,12 @@ class Config(object):
 		self.batch_size = 100
 		self.lr = 0.001
 
-		self.songtype = 20#20
+		self.songtype = 19#20
 		self.sign = 16
-		self.notesize = 3
-		self.flats = 11
+		self.notesize =5
+		self.flats = 12
 		self.mode = 6
+		
 		self.len = 1
 		self.complex = 1
 		self.max_length = 8
@@ -39,9 +40,9 @@ class Config(object):
 		self.vocab_size = 81
 		# self.meta_embed = self.songtype
 		self.meta_embed = 100 #self.songtype/2
-		self.hidden_size = self.meta_embed*5 #+ 2
+		self.hidden_size = self.meta_embed*5 + 2
 		self.embedding_dims = self.vocab_size*3/4
-		self.vocab_meta = self.songtype + self.sign + self.notesize+ self.flats + self.mode
+		self.vocab_meta = self.songtype + self.sign + self.notesize + self.flats + self.mode
 		self.num_meta = 7
 		self.num_layers = 2
 		self.keep_prob = 0.6
@@ -204,9 +205,10 @@ class CharRNN(object):
 									 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
 		embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.meta_placeholder[:, :5])
 
+		embeddings_meta_flat = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size-2])
+
 		# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
-		embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
-		# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.meta_placeholder[:, 5:])], axis=0)
+		embeddings_meta = tf.concat([embeddings_meta_flat, tf.to_float(self.meta_placeholder[:, 5:])], axis=-1)
 
 		if self.cell_type == 'lstm':
 			initial_added = tf.cond(self.use_meta_placeholder,
@@ -392,9 +394,10 @@ class Seq2SeqRNN(object):
 										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings_meta')
 			embeddings_meta = tf.nn.embedding_lookup(embeddings_var_meta, self.meta_placeholder[:, :5])
 
+			embeddings_meta_flat = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size-2])
+
 			# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
-			embeddings_meta = tf.reshape(embeddings_meta, shape=[-1, self.config.hidden_size]) # -2
-			# 	embeddings_meta = tf.concat([embeddings_meta, tf.convert_to_tensor(self.meta_placeholder[:, 5:])], axis=0)
+			embeddings_meta = tf.concat([embeddings_meta_flat, tf.to_float(self.meta_placeholder[:, 5:])], axis=-1)
 
 			# Create initial_state
 			if self.cell_type == 'lstm':
@@ -417,7 +420,7 @@ class Seq2SeqRNN(object):
 				encoder_fw_state, encoder_bw_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.cell,
 				                            cell_bw=self.cell, inputs=self.encoder_embedded,
 				                            sequence_length=self.num_encode, time_major=True, dtype=tf.float32)
-				
+
 				self.encoder_outputs = tf.concat((encoder_fw_outputs, encoder_bw_outputs), 2)
 				if isinstance(encoder_fw_state, LSTMStateTuple):
 					encoder_state_c = tf.concat( (encoder_fw_state.c, encoder_bw_state.c), 1, name='bidirectional_concat_c')
@@ -752,7 +755,7 @@ class GenAdversarialNet(object):
 					labels=self.label_placeholder))
 
 		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake) +  loss_class
-		# tot_g_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.generator_output, 
+		# tot_g_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.generator_output,
 		# 					labels=self.label_placeholder[self.config.batch_size/2:]))
 
 		fool_examples = tf.cast(tf.equal(tf.argmax(self.gan_fake_output, axis=-1), self.config.num_classes-1), tf.float32)*(-1)
