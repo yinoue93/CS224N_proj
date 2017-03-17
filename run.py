@@ -193,7 +193,7 @@ def run_model(args):
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
     meta_vocabulary = reader.read_abc_pickle(META_DATA)
 
-    start_encode = vocabulary["<start>"] if args.train != "sample" else vocabulary["<go>"]
+    start_encode = vocabulary["<go>"] if (args.train == "sample" and use_seq2seq_data) else vocabulary["<start>"]
     end_encode = vocabulary["<end>"]
     # Getting meta mapping:
     meta_map = pickle.load(open(META_DATA, 'rb'))
@@ -256,7 +256,7 @@ def run_model(args):
             # Sample Model
             warm_length = 20
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
-            warm_meta = utils_runtime.encode_meta(meta_vocabulary, meta_data)
+            warm_meta = utils_runtime.encode_meta(meta_vocabulary, warm_meta)
 
             warm_meta_array = [warm_meta[:] for idx in xrange(3)]
             # Change Key
