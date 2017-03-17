@@ -49,6 +49,7 @@ class Config(object):
 		self.num_encode = 8
 		self.num_decode = 4
 		self.attention_option = 'luong'
+		self.bidirectional = False
 
 		# Discriminator Parameters
 		self.numFilters = 32
@@ -310,14 +311,13 @@ class CharRNN(object):
 class Seq2SeqRNN(object):
 
 	def __init__(self,input_size, label_size, batch_size, vocab_size, cell_type,
-						hyperparam_path, start_encode, end_encode, bidirectional=False):
+						hyperparam_path, start_encode, end_encode):
 		self.input_size = input_size
 		self.label_size = label_size
 		self.cell_type = cell_type
 		self.config = Config(hyperparam_path)
 		self.config.batch_size = batch_size
 		self.config.vocab_size = vocab_size
-		self.bidirectional = bidirectional
 
 		# input_shape = (None,) + tuple([input_size])
 		input_shape = (None, None)
@@ -404,7 +404,7 @@ class Seq2SeqRNN(object):
 										lambda: self.initial_state_placeholder)
 				initial_tuple = (initial_added, np.zeros((self.config.batch_size, self.config.hidden_size), dtype=np.float32))
 
-			if not bidirectional:
+			if not self.config.bidirectional:
 				self.encoder_outputs, self.encoder_state = tf.nn.dynamic_rnn(cell=self.cell, inputs=self.encoder_embedded,
 									  sequence_length=self.num_encode,time_major=True, dtype=tf.float32, initial_state=initial_tuple)
 			else:
@@ -541,8 +541,6 @@ class Seq2SeqRNN(object):
 		pred = session.run(predictions, feed_dict=feed_dict)
 		# return logits, state
 		return pred
-
-
 
 
 
