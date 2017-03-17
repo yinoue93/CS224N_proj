@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import sys
-from models import CharRNN, Config, Seq2SeqRNN, CBOW, GenAdversarialNet
+from models import Config, GenAdversarialNet
 # from utils_preprocess import hdf52dict
 import pickle
 import reader
@@ -10,6 +10,7 @@ import random
 import utils_runtime
 import utils_hyperparam
 import utils
+import re
 
 tf_ver = tf.__version__
 SHERLOCK = (str(tf_ver) == '0.12.1')
@@ -50,7 +51,7 @@ TEMPERATURE = 1.0
 
 
 
-def run_model(args):
+def run_gan(args):
     use_seq2seq_data = (args.model == 'seq2seq')
     if args.data_dir != '':
         dataset_dir = args.data_dir
@@ -142,6 +143,7 @@ def run_model(args):
 
         # Sample Model
         if args.train == "sample":
+            pass
             # # Sample Model
             # warm_length = 20
             # warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
@@ -241,9 +243,10 @@ def run_model(args):
                         # summary, conf, accuracy = curModel.run(args, session, feed_values)
 
                         if args.train == "train":
-                			_, _ = session.run([train_op_d, train_op_gan], feed_dict=feed_dict)
-                		else: # Sample case not necessary b/c function will only be called during normal runs
-                			# summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
+                    		_, _ = session.run([train_op_d, train_op_gan], feed_dict=feed_dict)
+                    	else: # Sample case not necessary b/c function will only be called during normal runs
+                            pass
+                            # summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
 
 
                         # file_writer.add_summary(summary, step)
