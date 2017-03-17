@@ -175,7 +175,7 @@ def parseCommandLine():
 
     print("Parsing Command Line Arguments...")
     requiredModel = parser.add_argument_group('Required Model arguments')
-    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "cbow", "gan"], type = str,
+    requiredModel.add_argument('-m', choices = ["seq2seq", "char", "cbow"], type = str,
     					dest = 'model', required = True, help = 'Type of model to run')
     requiredTrain = parser.add_argument_group('Required Train/Test arguments')
     requiredTrain.add_argument('-p', choices = ["train", "test", "sample", "dev"], type = str,

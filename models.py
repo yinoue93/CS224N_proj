@@ -54,7 +54,7 @@ class Config(object):
 		self.num_encode = 8
 		self.num_decode = 4
 		self.attention_option = 'luong'
-		self.bidirectional = False
+		self.bidirectional = True
 
 		# Discriminator Parameters
 		self.numFilters = 32
@@ -340,11 +340,11 @@ class Seq2SeqRNN(object):
 
 		if cell_type == 'rnn':
 			self.encoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
-			self.decoder_cell = rnn.BasicRNNCell(2*self.config.hidden_size)
+			self.decoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'gru':
 			self.encoder_cell = rnn.GRUCell(self.config.hidden_size)
-			self.decoder_cell = rnn.GRUCell(2*self.config.hidden_size)
+			self.decoder_cell = rnn.GRUCell(self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'lstm':
 			self.encoder_cell = rnn.BasicLSTMCell(self.config.hidden_size)

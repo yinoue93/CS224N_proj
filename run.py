@@ -109,6 +109,7 @@ def sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, m
                                 num_encode, num_encode)
     # logits, state = curModel.sample(session, feed_values)
     prediction = curModel.sample(session, feed_values)
+    # print len(prediction[0])
     return prediction
 
 
@@ -154,7 +155,7 @@ def sampleCBOW(session, args, curModel, vocabulary_decode):
 
 
 def run_model(args):
-    use_seq2seq_data = (args.model == 'seq2seq' or args.model == 'gan')
+    use_seq2seq_data = (args.model == 'seq2seq')
     if args.data_dir != '':
         dataset_dir = args.data_dir
     elif args.train == 'train':
@@ -343,7 +344,7 @@ def run_model(args):
                         num_decode = num_encode[:]
 
                         feed_values = utils_runtime.pack_feed_values(args, input_window_batch,
-                                                    output_window_batch, meta_batch,
+                                                    output_window_batch, new_meta_batch,
                                                     initial_state_batch, True,
                                                     num_encode, num_decode)
 
@@ -381,13 +382,11 @@ def run_model(args):
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
 
+
 def main(_):
 
     args = utils_runtime.parseCommandLine()
-    if args.model == 'gan':
-        run_gan(args)
-    else:
-        run_model(args)
+    run_model(args)
 
     if args.train != "sample":
         if tf.gfile.Exists(SUMMARY_DIR):
