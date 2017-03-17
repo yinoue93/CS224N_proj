@@ -125,15 +125,25 @@ def save_checkpoint(args, session, saver, i):
     # saver.save(session, os.path.join(SUMMARY_DIR,'model.ckpt'), global_step=i)
 
 
-def encode_meta(meta_vocabulary, meta_batch):
+def encode_meta_batch(meta_vocabulary, meta_batch):
     new_meta_batch = []
     vocab_lengths = [0] + [len(small_vocab) for small_vocab in meta_vocabulary.values()]
     num_values = len(meta_vocabulary.values())
+
     for meta_data in meta_batch:
         new_meta_data = [meta_data[i] + sum(vocab_lengths[:i+1]) for i in xrange(num_values)]
         new_meta_data = np.append(new_meta_data, meta_data[5:])
         new_meta_batch.append(new_meta_data)
     return new_meta_batch
+
+
+def encode_meta(meta_vocabulary, meta_data):
+    vocab_lengths = [0] + [len(small_vocab) for small_vocab in meta_vocabulary.values()]
+    num_values = len(meta_vocabulary.values())
+
+    new_meta_data = [meta_data[i] + sum(vocab_lengths[:i+1]) for i in xrange(num_values)]
+    new_meta_data = np.append(new_meta_data, meta_data[5:])
+    return new_meta_data
 
 
 def pack_feed_values(args, input_batch, label_batch, meta_batch,

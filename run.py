@@ -256,6 +256,7 @@ def run_model(args):
             # Sample Model
             warm_length = 20
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
+            warm_meta = utils_runtime.encode_meta(meta_vocabulary, meta_data)
 
             warm_meta_array = [warm_meta[:] for idx in xrange(3)]
             # Change Key
@@ -329,7 +330,7 @@ def run_model(args):
                     data_batches = reader.abc_batch(data, n=batch_size)
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
-                        new_meta_batch = utils_runtime.encode_meta(meta_vocabulary, meta_batch)
+                        new_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, meta_batch)
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
                         num_encode = [window_sz] * 100
