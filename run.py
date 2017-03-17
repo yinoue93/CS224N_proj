@@ -40,7 +40,7 @@ GAN_DEVELOPMENT_DATA = DIR_MODIFIER + '/full_dataset/gan_dataset/nn_input_dev_st
 VOCAB_DATA = DIR_MODIFIER + '/full_dataset/global_map_music.p'
 META_DATA = DIR_MODIFIER + '/full_dataset/global_map_meta.p'
 
-SUMMARY_DIR = DIR_MODIFIER + '/summary'
+SUMMARY_DIR = DIR_MODIFIER + '/dev_summary'
 
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
@@ -371,7 +371,6 @@ def run_model(args):
                 # Plot Confusion Matrix
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
-
 
 def main(_):
 

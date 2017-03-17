@@ -122,10 +122,6 @@ def runHyperparam(paramTxtF, dataset):
 								%(DEV_CKPT_DIR, modelType, TMP_HYPER_PICKLE, dataset_dev)
 		os.system(cmd)
 
-		count += 1
-		if count==2:
-			break
-
 	os.remove(TMP_HYPER_PICKLE)
 
 	# rename the result file with a timestamp
