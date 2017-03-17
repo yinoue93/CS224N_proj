@@ -257,12 +257,16 @@ def run_model(args):
             warm_length = 20
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
 
-            warm_meta_array = [warm_meta[:] for idx in xrange(3)]
+            warm_meta_array = [warm_meta[:] for idx in xrange(5)]
 
             # Change Key
             warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
             # Change Number of Flats/Sharps
             warm_meta_array[2][3] = np.random.choice(11)
+            # Lower Complexity
+            warm_meta_array[3][6] = 50
+            # Higher Complexity
+            warm_meta_array[4][6] = 350
 
             new_warm_meta = utils_runtime.encode_meta_batch(meta_vocabulary, warm_meta_array)
             new_warm_meta_array = zip(warm_meta_array, new_warm_meta)

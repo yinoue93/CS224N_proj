@@ -137,20 +137,6 @@ def encode_meta_batch(meta_vocabulary, meta_batch):
     return new_meta_batch
 
 
-# def encode_meta(meta_vocabulary, meta_data):
-#     vocab_lengths = [0] + [len(small_vocab) for small_vocab in meta_vocabulary.values()]
-#     num_values = len(meta_vocabulary.values())
-#
-#     for i in xrange(num_values):
-#         print vocab_lengths[:i+1]
-#         print sum(vocab_lengths[:i+1])
-#         print meta_data[i] + sum(vocab_lengths[:i+1])
-#
-#     new_meta_data = [meta_data[i] + sum(vocab_lengths[:i+1]) for i in xrange(num_values)]
-#     new_meta_data = np.append(new_meta_data, meta_data[5:])
-#     return new_meta_data
-
-
 def pack_feed_values(args, input_batch, label_batch, meta_batch,
                             initial_state_batch, use_meta_batch, num_encode, num_decode):
     if (args.model == 'seq2seq') and (args.train != "sample"):
