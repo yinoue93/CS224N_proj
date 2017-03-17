@@ -29,10 +29,10 @@ class Config(object):
 
 		self.songtype = 19#20
 		self.sign = 16
-		self.notesize =5
+		self.notesize = 5
 		self.flats = 12
 		self.mode = 6
-		
+
 		self.len = 1
 		self.complex = 1
 		self.max_length = 8
