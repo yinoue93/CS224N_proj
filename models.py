@@ -23,52 +23,57 @@ import utils_hyperparam
 
 class Config(object):
 
+	def setIfNotSet(self, attrStr, val):
+		if not hasattr(self, attrStr):
+			setattr(self, attrStr, val)
+
 	def __init__(self, hyperparam_path):
-		self.batch_size = 100
-		self.lr = 0.001
-
-		self.songtype = 19#20
-		self.sign = 16
-		self.notesize = 5
-		self.flats = 12
-		self.mode = 6
-
-		self.len = 1
-		self.complex = 1
-		self.max_length = 8
-
-		self.vocab_size = 81
-		# self.meta_embed = self.songtype
-		self.meta_embed = 100 #self.songtype/2
-		self.hidden_size = self.meta_embed*5 + 2
-		self.embedding_dims = self.vocab_size*3/4
-		self.vocab_meta = self.songtype + self.sign + self.notesize + self.flats + self.mode
-		self.num_meta = 7
-		self.num_layers = 2
-		self.keep_prob = 0.6
-
-		# Only for CBOW model
-		self.embed_size = 32
-
-		# Only for Seq2Seq Attention Models
-		self.num_encode = 8
-		self.num_decode = 4
-		self.attention_option = 'luong'
-		self.bidirectional = True
-
-		# Discriminator Parameters
-		self.numFilters = 32
-		self.hidden_units = 100
-		self.num_outputs = 2
-		self.cnn_lr = 0.001
-		self.label_smooth = 0.15
-		self.generator_prob = 0.1
-		self.num_classes = 19
-		self.gan_lr = 0.001
-
 		if len(hyperparam_path)!=0:
 			print "Setting hyperparameters from a file %s" %hyperparam_path
 			utils_hyperparam.setHyperparam(self, hyperparam_path)
+
+		self.setIfNotSet('batch_size', 100)
+		self.setIfNotSet('lr', 0.001)
+
+		self.setIfNotSet('songtype', 19) #20
+		self.setIfNotSet('sign', 16)
+		self.setIfNotSet('notesize', 5)
+		self.setIfNotSet('flats', 12)
+		self.setIfNotSet('mode', 6)
+
+		self.setIfNotSet('len', 1)
+		self.setIfNotSet('complex', 1)
+		self.setIfNotSet('max_length', 8)
+
+		self.setIfNotSet('vocab_size', 81)
+		self.setIfNotSet('meta_embed', 160) #self.songtype/2
+		self.setIfNotSet('hidden_size', self.meta_embed*5 + 2)
+		self.setIfNotSet('embedding_dims', 20)
+		self.setIfNotSet('vocab_meta', self.songtype + self.sign + self.notesize + self.flats + self.mode)
+		self.setIfNotSet('num_meta', 7)
+		self.setIfNotSet('num_layers', 2)
+		self.setIfNotSet('keep_prob', 0.8)
+
+		# Only for CBOW model
+		self.setIfNotSet('embed_size', 32)
+
+		# Only for Seq2Seq Attention Models
+		self.setIfNotSet('num_encode', 8)
+		self.setIfNotSet('num_decode', 4)
+		self.setIfNotSet('attention_option', 'luong')
+		self.setIfNotSet('bidirectional', True)
+
+		# Discriminator Parameters
+		self.setIfNotSet('numFilters', 32)
+		self.setIfNotSet('hidden_units', 100)
+		self.setIfNotSet('num_outputs', 2)
+		self.setIfNotSet('cnn_lr', 0.001)
+		self.setIfNotSet('label_smooth', 0.15)
+		self.setIfNotSet('generator_prob', 0.1)
+		self.setIfNotSet('num_classes', 19)
+		self.setIfNotSet('gan_lr', 0.001)
+
+
 
 
 class CBOW(object):
@@ -354,10 +359,8 @@ class Seq2SeqRNN(object):
 		print "Completed Initializing the Seq2Seq RNN Model using a {0} cell".format(cell_type.upper())
 
 		# Seq2Seq specific initializers
-		self.attention_option = "luong"
 		self.start_encode = start_encode
 		self.end_encode = end_encode
-
 
 	# Based on the example model presented in https://github.com/ematvey/tensorflow-seq2seq-tutorials/blob/master/model_new.py
 	def create_model(self, is_train):
@@ -446,7 +449,7 @@ class Seq2SeqRNN(object):
 
 			attention_keys, attention_values, attention_score_fn, \
 					attention_construct_fn = seq2seq.prepare_attention( attention_states=attention_states,
-										attention_option=self.attention_option, num_units=self.config.hidden_size)
+										attention_option=self.config.attention_option, num_units=self.config.hidden_size)
 
 			decoder_fn_train = seq2seq.attention_decoder_fn_train( encoder_state=self.encoder_state,
 						attention_keys=attention_keys, attention_values=attention_values,

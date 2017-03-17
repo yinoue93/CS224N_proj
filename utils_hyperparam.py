@@ -47,14 +47,20 @@ def parseHyperTxt(paramTxtF):
 			else:
 				name,start,end,step = [s.strip() for s in line.split(',')]
 
-				if float(start) == float(end):
-					params = [float(start)]
+				startNum = float(start)
+				endNum = float(end)
+				stepNum = float(step)
+
+				if startNum == endNum:
+					params = [startNum]
 				else:
-					params = list(np.arange(float(start),float(end),float(step)))
+					params = list(np.arange(startNum,endNum,stepNum))
 					params = [round(a,5) for a in params]
 					# python list is not inclusive
-					if params[-1]!=float(end):
-						params.append(float(end))
+					if params[-1]!=endNum:
+						params.append(endNum)
+
+				params = [(int(par) if par.is_integer() else par) for par in params]
 
 			nameList.append(name)
 			paramList.append(params)
@@ -88,11 +94,6 @@ def runHyperparam(paramTxtF, dataset):
 		paramStrList = []
 		for name,par in zip(nameList,param):
 			paramDict[name] = par
-
-			if name=='meta_embed':
-				# hidden_size is always 5 times meta_embed
-				paramDict['hidden_size'] = par*5
-				paramStrList.append('hidden_size: %f' %(par*5))
 			
 			# there is probably a more elegant way to do this...
 			try:
@@ -150,10 +151,7 @@ def setHyperparam(config, hyperparam_path):
 	paramDict = pickle.load(open(hyperparam_path, 'rb'))
 
 	for key,val in paramDict.iteritems():
-		if type(getattr(config, key)) == int:
-			setattr(config, key, int(val))
-		else:
-			setattr(config, key, val)
+		setattr(config, key, val)
 
 	setattr(config, 'dev_filename', OUTPUT_FILE)
 

@@ -382,7 +382,6 @@ def run_model(args):
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
                 plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
 
-
 def main(_):
 
     args = utils_runtime.parseCommandLine()

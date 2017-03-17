@@ -3,5 +3,5 @@ seq2seq
 meta_embed, 60, 160, 50
 embedding_dims, 10, 70, 30
 keep_prob, 0.8, 0.8, 0
-attention_option, ['luong', 'bahdanau']
-bidirectional, 0, 1, 1
+attention_option, ['bahdanau', 'luong']
+bidirectional, [False, True]
