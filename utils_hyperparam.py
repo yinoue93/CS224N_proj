@@ -210,6 +210,7 @@ def resultParser(resultFname, top_N=3):
 			print '%0.3f:%0.5f' %(level,np.mean(accuracy_list[indices]))
 
 	print '='*50
+	
 
 if __name__ == "__main__":
 	desc = u'{0} [Args] [Options]\nDetailed options -h or --help'.format(__file__)
@@ -223,6 +224,8 @@ if __name__ == "__main__":
 						dest = 'dataset', help = 'Dataset to run run.py')
 	parser.add_argument('-n', type = int, default=3,
 						dest = 'top_N', help = 'Top N accuracies')
+	parser.add_argument('-ckpt', type = str, default='', dest = 'ckpt_dir', 
+						help = 'Checkpoint to run the train/test set accuracy test')
 
 	args = parser.parse_args()
 
