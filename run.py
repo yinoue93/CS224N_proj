@@ -235,7 +235,8 @@ def run_model(args):
         # Checkpoint
         i_stopped, found_ckpt = utils_runtime.get_checkpoint(args, session, saver)
 
-        file_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
+        # file_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
+        file_writer = tf.summary.FileWriter(args.ckpt_dir, graph=session.graph, max_queue=10, flush_secs=30)
         confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
         batch_accuracies = []
 
