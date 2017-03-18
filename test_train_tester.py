@@ -7,8 +7,11 @@ from utils_hyperparam import OUTPUT_FILE
 
 TMP_HYPER_PICKLE = 'tmp_hyperparam.p'
 
-TRAIN = '/data/full_dataset/char_rnn_dataset/nn_input_train_stride_25_window_25_nnType_char_rnn_shuffled'
-MODEL_TYPE = 'cbow'
+#-----------CHANGE THESE PARAMETERS--------------------------
+TRAIN = '/data/full_dataset/char_rnn_dataset/nn_input_train_stride_25_window_10_nnType_char_rnn_shuffled'
+CKPT_DIR = '/data/another/char_10/'
+MODEL_TYPE = 'char'
+#------------------------------------------------------------
 
 TEST = TRAIN.replace('train', 'test')
 DEV = TRAIN.replace('train', 'dev')
@@ -20,13 +23,13 @@ def runTests(ckptList, dataset):
 
 		os.system(cmd)
 
-def getTestTrainAccuracies(ckpt_dir):
+def getTestTrainAccuracies():
 	if os.path.exists(OUTPUT_FILE):
 		os.remove(OUTPUT_FILE)
 
 	# first scrape the model names
 	ckptSet = set()
-	for filename in os.listdir(ckpt_dir):
+	for filename in os.listdir(CKPT_DIR):
 		modelName = re.findall('model.ckpt-[0-9]+', filename)
 		if len(modelName)==0:
 			continue
@@ -40,7 +43,7 @@ def getTestTrainAccuracies(ckpt_dir):
 
 		ckptList.append(cName)
 
-	ckptList = [os.path.join(ckpt_dir, ckptName) for ckptName in ckptList]
+	ckptList = [os.path.join(CKPT_DIR, ckptName) for ckptName in ckptList]
 
 	# dump a fake pickle file to trick run.py to think that we are doing
 	# hyperparameter tuning
@@ -73,4 +76,4 @@ def getTestTrainAccuracies(ckpt_dir):
 
 
 if __name__ == "__main__":
-	getTestTrainAccuracies('/data/another/cbow_ckpt/')
+	getTestTrainAccuracies()
