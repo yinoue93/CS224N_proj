@@ -151,6 +151,7 @@ def setHyperparam(config, hyperparam_path):
 
 	setattr(config, 'dev_filename', OUTPUT_FILE)
 
+
 def resultParser(resultFname, top_N=3):
 	"""
 	Usage: python utils_hyperparam.py -m results -f grid_search_result_tmp.txt
@@ -184,6 +185,10 @@ def resultParser(resultFname, top_N=3):
 				valList = [float(re.findall('[0-9]+\.*[0-9]*', token)[0]) 
 													for token in tokenList]
 
+				tokenList = re.findall('[a-zA-Z_]+: [a-zA-Z]+', line)
+				configList += [token.split(' ')[0] for token in tokenList]
+				valList += [token.split(' ')[1] for token in tokenList]
+
 				if config_map==None:
 					config_map = []
 					for configStr in configList:
@@ -207,7 +212,7 @@ def resultParser(resultFname, top_N=3):
 		config_list = np.asarray(config_map[config_idx])
 		for level in sorted(list(set(config_list))):
 			indices = (config_list==level)
-			print '%0.3f:%0.5f' %(level,np.mean(accuracy_list[indices]))
+			print str(level)+':%0.5f' %(np.median(accuracy_list[indices]))
 
 	print '='*50
 	
