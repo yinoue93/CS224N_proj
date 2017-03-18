@@ -137,6 +137,13 @@ def encode_meta_batch(meta_vocabulary, meta_batch):
     return new_meta_batch
 
 
+def create_noise_meta(meta_vocabulary):
+    vocab_lengths = [len(small_vocab) for small_vocab in meta_vocabulary.values()]
+    noise_meta_batch = [np.random.randint(upper_bound) for upper_bound in vocab_lengths]
+    noise_meta_batch += [np.random.randint(10, high=41), np.random.randint(50, high=400)]
+    return np.array(noise_meta_batch)
+
+
 def pack_feed_values(args, input_batch, label_batch, meta_batch,
                             initial_state_batch, use_meta_batch, num_encode, num_decode):
     # if (args.train != "sample"):

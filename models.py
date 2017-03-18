@@ -29,10 +29,10 @@ class Config(object):
 
 		self.songtype = 19#20
 		self.sign = 16
-		self.notesize =5
+		self.notesize = 5
 		self.flats = 12
 		self.mode = 6
-		
+
 		self.len = 1
 		self.complex = 1
 		self.max_length = 8
@@ -341,11 +341,11 @@ class Seq2SeqRNN(object):
 
 		if cell_type == 'rnn':
 			self.encoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
-			self.decoder_cell = rnn.BasicRNNCell(2*self.config.hidden_size)
+			self.decoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'gru':
 			self.encoder_cell = rnn.GRUCell(self.config.hidden_size)
-			self.decoder_cell = rnn.GRUCell(2*self.config.hidden_size)
+			self.decoder_cell = rnn.GRUCell(self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'lstm':
 			self.encoder_cell = rnn.BasicLSTMCell(self.config.hidden_size)
@@ -767,9 +767,7 @@ class GenAdversarialNet(object):
 	def train(self):
 		class_loss_weight = 1
 
-		self.gan_logits = tf.concat([self.gan_real_output, self.gan_fake_output],axis=0)
-
-		loss_class = tf.reduce_mean(class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.gan_logits,
+		loss_class = tf.reduce_mean(class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.gan_real_output,
 					labels=self.label_placeholder))
 
 		tot_d_loss = tf.reduce_mean(self.gan_pred_real + self.gan_pred_fake) +  loss_class
