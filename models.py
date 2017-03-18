@@ -457,7 +457,7 @@ class Seq2SeqRNN(object):
 						attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
 						attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
 						start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
-						maximum_length=tf.reduce_max(self.num_encode) + 3, num_decoder_symbols=self.config.vocab_size)
+						maximum_length=tf.reduce_max(self.num_decode), num_decoder_symbols=self.config.vocab_size)
 
 			self.decoder_outputs_train, self.decoder_state_train, \
 			self.decoder_context_state_train =  seq2seq.dynamic_rnn_decoder( cell=self.decoder_cell,
@@ -473,11 +473,12 @@ class Seq2SeqRNN(object):
 
 			self.decoder_logits_inference, self.decoder_state_inference, \
 			self.decoder_context_state_inference = seq2seq.dynamic_rnn_decoder(cell=self.decoder_cell,
-					decoder_fn=decoder_fn_inference, time_major=True, scope=scope)
+					decoder_fn=decoder_fn_inference, sequence_length=self.num_decode, time_major=True,
+					scope=scope)
 
 
 			self.decoder_prediction_inference = tf.argmax(self.decoder_logits_inference, axis=-1, name='decoder_prediction_inference')
-
+			# print self.decoder_logits_inference.get_shape().as_list()
 			print("Built the Seq2Seq RNN Model...")
 
 
@@ -617,6 +618,7 @@ class Discriminator(object):
 			win_size = [1,3,1,1]
 			strideSz3 = [1,1,1,1]
 			conv_layer3 = tf.nn.max_pool(conv_layer2,ksize=win_size,strides=strideSz3, padding='SAME')
+			conv_layer3 = tf.nn.max_pool(self.input,ksize=win_size,strides=strideSz3, padding='SAME')
 
 			layerShape = conv_layer3.get_shape().as_list()
 			numParams = reduce(lambda x, y: x*y, layerShape[1:])

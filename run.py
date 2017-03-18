@@ -106,10 +106,10 @@ def sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, m
     feed_values = utils_runtime.pack_feed_values(args, [warm_chars],
                                 [[vocabulary["<go>"]]], [np.zeros_like(meta)],
                                 initial_state_sample, True,
-                                num_encode, num_encode)
+                                num_encode, num_decode)
     # logits, state = curModel.sample(session, feed_values)
     prediction = curModel.sample(session, feed_values)
-    # print len(prediction[0])
+    print len(prediction[0])
     return prediction
 
 
