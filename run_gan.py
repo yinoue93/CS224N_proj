@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import sys
-from models import Config, GenAdversarialNet
+from models import Config, CharRNN, Discriminator, GenAdversarialNet
 # from utils_preprocess import hdf52dict
 import pickle
 import reader
@@ -39,7 +39,7 @@ META_DATA = DIR_MODIFIER + '/full_dataset/global_map_meta.p'
 
 SUMMARY_DIR = DIR_MODIFIER + '/cbow_summary'
 
-BATCH_SIZE = 10#0 # should be dynamically passed into Config
+BATCH_SIZE = 100#0 # should be dynamically passed into Config
 NUM_EPOCHS = 50
 GPU_CONFIG = tf.ConfigProto()
 GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
@@ -92,7 +92,7 @@ def run_gan(args):
     vocabulary_size = len(vocabulary)
     vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
     meta_vocabulary = reader.read_abc_pickle(META_DATA)
-    num_classes = len(meta_vocabulary['R'])
+    num_classes = len(meta_vocabulary['R']) + 1
 
     gan_label_size = 1
 
@@ -113,7 +113,8 @@ def run_gan(args):
     probabilities_real_op, probabilities_fake_op = curModel.create_model()
     input_placeholder, label_placeholder, \
         rnn_meta_placeholder, rnn_initial_state_placeholder, \
-            rnn_use_meta_placeholder, train_op_d, train_op_gan = curModel.train()
+            rnn_use_meta_placeholder, train_op_d, train_op_gan, \
+            loss_op, class_loss, accuracy_op, gen_accuracy_op = curModel.train()
 
     print "Reading in {0}-set filenames.".format(args.train)
     print "Running {0} model for {1} epochs.".format(args.model, NUM_EPOCHS)
@@ -228,6 +229,26 @@ def run_gan(args):
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
                         new_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, meta_batch)
+                        
+                        for it in range(0, 10):
+                            noise_meta_batch = [utils_runtime.create_noise_meta(meta_vocabulary) for l in xrange(batch_size/2)]
+                            new_noise_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, noise_meta_batch)
+                            noise_input_window_batch = [np.random.randint(vocabulary_size, size=window_sz) for l in xrange(batch_size/2)]
+                            initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size/2)] for layer in xrange(curModel.config.num_layers)]
+                            gan_labels = np.asarray([int(m[0]) for m in meta_batch])
+
+                            feed_dict = {
+                                input_placeholder: noise_input_window_batch,
+                                rnn_meta_placeholder: new_noise_meta_batch,
+                                rnn_initial_state_placeholder: initial_state_batch,
+                                rnn_use_meta_placeholder: True
+                            }
+
+                            if args.train == "train":
+                                _, gen_accuracy = session.run([ train_op_gan, gen_accuracy_op], feed_dict=feed_dict)
+
+                            print "Only Generator training loss: {0}".format(gen_accuracy)
+
 
                         noise_meta_batch = [utils_runtime.create_noise_meta(meta_vocabulary) for l in xrange(batch_size/2)]
                         new_noise_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, noise_meta_batch)
@@ -249,12 +270,16 @@ def run_gan(args):
                         # summary, conf, accuracy = curModel.run(args, session, feed_values)
 
                         if args.train == "train":
-                    		_, _ = session.run([train_op_d, train_op_gan], feed_dict=feed_dict)
+                    		_, _ , curLoss, classLoss, accuracy, gen_accuracy = session.run([train_op_d, train_op_gan, loss_op,
+                                                                             class_loss, accuracy_op, gen_accuracy_op], feed_dict=feed_dict)
                     	else: # Sample case not necessary b/c function will only be called during normal runs
                             pass
                             # summary, loss, probabilities, prediction, accuracy, confusion_matrix = session.run([self.summary_op, self.loss_op, self.probabilities_op, self.prediction_op, self.accuracy_op, self.confusion_matrix], feed_dict=feed_dict)
 
-
+                        print "The current total Discriminator loss is {0} in epoch {1}".format(curLoss, i)
+                        print "The current Class loss for real data is {0} in epoch {1}".format(classLoss, i)
+                        print "The current accuracy for real data is {0} in epoch {1}".format(accuracy, i)
+                        print "The current accuracy for generator is {0} in epoch {1} \n".format(gen_accuracy, i)
                         # file_writer.add_summary(summary, step)
                         #
                         # # Update confusion matrix
@@ -284,8 +309,8 @@ def run_gan(args):
                         curFile.close()
 
                 # Plot Confusion Matrix
-                plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
-                plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
+                # plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
+                # plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
 
 
 
