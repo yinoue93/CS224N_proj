@@ -23,57 +23,52 @@ import utils_hyperparam
 
 class Config(object):
 
-	def setIfNotSet(self, attrStr, val):
-		if not hasattr(self, attrStr):
-			setattr(self, attrStr, val)
-
 	def __init__(self, hyperparam_path):
+		self.batch_size = 100
+		self.lr = 0.001
+
+		self.songtype = 19#20
+		self.sign = 16
+		self.notesize =5
+		self.flats = 12
+		self.mode = 6
+		
+		self.len = 1
+		self.complex = 1
+		self.max_length = 8
+
+		self.vocab_size = 81
+		# self.meta_embed = self.songtype
+		self.meta_embed = 100 #self.songtype/2
+		self.hidden_size = self.meta_embed*5 + 2
+		self.embedding_dims = self.vocab_size*3/4
+		self.vocab_meta = self.songtype + self.sign + self.notesize + self.flats + self.mode
+		self.num_meta = 7
+		self.num_layers = 2
+		self.keep_prob = 0.6
+
+		# Only for CBOW model
+		self.embed_size = 32
+
+		# Only for Seq2Seq Attention Models
+		self.num_encode = 8
+		self.num_decode = 4
+		self.attention_option = 'luong'
+		self.bidirectional = False
+
+		# Discriminator Parameters
+		self.numFilters = 32
+		self.hidden_units = 100
+		self.num_outputs = 2
+		self.cnn_lr = 0.001
+		self.label_smooth = 0.15
+		self.generator_prob = 0.1
+		self.num_classes = 19
+		self.gan_lr = 0.001
+
 		if len(hyperparam_path)!=0:
 			print "Setting hyperparameters from a file %s" %hyperparam_path
 			utils_hyperparam.setHyperparam(self, hyperparam_path)
-
-		self.setIfNotSet('batch_size', 100)
-		self.setIfNotSet('lr', 0.001)
-
-		self.setIfNotSet('songtype', 19) #20
-		self.setIfNotSet('sign', 16)
-		self.setIfNotSet('notesize', 5)
-		self.setIfNotSet('flats', 12)
-		self.setIfNotSet('mode', 6)
-
-		self.setIfNotSet('len', 1)
-		self.setIfNotSet('complex', 1)
-		self.setIfNotSet('max_length', 8)
-
-		self.setIfNotSet('vocab_size', 81)
-		self.setIfNotSet('meta_embed', 160) #self.songtype/2
-		self.setIfNotSet('hidden_size', self.meta_embed*5 + 2)
-		self.setIfNotSet('embedding_dims', 20)
-		self.setIfNotSet('vocab_meta', self.songtype + self.sign + self.notesize + self.flats + self.mode)
-		self.setIfNotSet('num_meta', 7)
-		self.setIfNotSet('num_layers', 2)
-		self.setIfNotSet('keep_prob', 0.8)
-
-		# Only for CBOW model
-		self.setIfNotSet('embed_size', 32)
-
-		# Only for Seq2Seq Attention Models
-		self.setIfNotSet('num_encode', 8)
-		self.setIfNotSet('num_decode', 4)
-		self.setIfNotSet('attention_option', 'luong')
-		self.setIfNotSet('bidirectional', True)
-
-		# Discriminator Parameters
-		self.setIfNotSet('numFilters', 32)
-		self.setIfNotSet('hidden_units', 100)
-		self.setIfNotSet('num_outputs', 2)
-		self.setIfNotSet('cnn_lr', 0.001)
-		self.setIfNotSet('label_smooth', 0.15)
-		self.setIfNotSet('generator_prob', 0.1)
-		self.setIfNotSet('num_classes', 19)
-		self.setIfNotSet('gan_lr', 0.001)
-
-
 
 
 class CBOW(object):
@@ -215,6 +210,7 @@ class CharRNN(object):
 		# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
 		embeddings_meta = tf.concat([embeddings_meta_flat, tf.to_float(self.meta_placeholder[:, 5:])], axis=-1)
 
+		print embeddings_meta.get_shape().as_list()
 		if self.cell_type == 'lstm':
 			initial_added = tf.cond(self.use_meta_placeholder,
 									lambda: [embeddings_meta for layer in xrange(self.config.num_layers)],
@@ -345,11 +341,11 @@ class Seq2SeqRNN(object):
 
 		if cell_type == 'rnn':
 			self.encoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
-			self.decoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
+			self.decoder_cell = rnn.BasicRNNCell(2*self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'gru':
 			self.encoder_cell = rnn.GRUCell(self.config.hidden_size)
-			self.decoder_cell = rnn.GRUCell(self.config.hidden_size)
+			self.decoder_cell = rnn.GRUCell(2*self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'lstm':
 			self.encoder_cell = rnn.BasicLSTMCell(self.config.hidden_size)
@@ -359,8 +355,10 @@ class Seq2SeqRNN(object):
 		print "Completed Initializing the Seq2Seq RNN Model using a {0} cell".format(cell_type.upper())
 
 		# Seq2Seq specific initializers
+		self.attention_option = "luong"
 		self.start_encode = start_encode
 		self.end_encode = end_encode
+
 
 	# Based on the example model presented in https://github.com/ematvey/tensorflow-seq2seq-tutorials/blob/master/model_new.py
 	def create_model(self, is_train):
@@ -449,7 +447,7 @@ class Seq2SeqRNN(object):
 
 			attention_keys, attention_values, attention_score_fn, \
 					attention_construct_fn = seq2seq.prepare_attention( attention_states=attention_states,
-										attention_option=self.config.attention_option, num_units=self.config.hidden_size)
+										attention_option=self.attention_option, num_units=self.config.hidden_size)
 
 			decoder_fn_train = seq2seq.attention_decoder_fn_train( encoder_state=self.encoder_state,
 						attention_keys=attention_keys, attention_values=attention_values,
@@ -671,7 +669,7 @@ class GenAdversarialNet(object):
 		self.use_batchnorm = use_batchnorm
 		self.dropout = dropout
 		self.config = Config(hyperparam_path)
-		self.config.batch_size = batch_size
+		self.batch_size = batch_size
 		self.config.vocab_size = vocab_size
 		self.config.num_classes = num_classes
 
@@ -696,8 +694,8 @@ class GenAdversarialNet(object):
 
 	# Ideas for function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
 	def normalize_class_outputs(self,logits):
-		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size/2, 1]))
-		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size/2, self.config.num_classes - 1])
+		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.batch_size/2, 1]))
+		positive_class_logits = tf.slice(logits, [0, 0], [self.batch_size/2, self.config.num_classes - 1])
 		mx = tf.reduce_max(positive_class_logits, 1, keep_dims=True)
 		safe_pos_class_logits = positive_class_logits - mx
 
@@ -706,13 +704,18 @@ class GenAdversarialNet(object):
 
 
 	def create_model(self):
-		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2,self.input_size ])
+		gen_batch_size = self.batch_size/2
+		disc_batch_size = self.batch_size/2
 
-		self.generator_model = CharRNN(self.input_size, self.label_size, self.config.batch_size/2 ,self.config.vocab_size,
+		generator_inputs = tf.slice(self.input_placeholder, [0,0], [gen_batch_size,self.input_size ])
+
+		# print generator_inputs.get_shape().as_list()
+		self.generator_model = CharRNN(self.input_size, self.label_size, gen_batch_size ,self.config.vocab_size,
 								self.cell_type, self.hyperparam_path, gan_inputs = generator_inputs)
 		self.generator_model.create_model(is_train = True)
 		self.generator_model.train()
 		self.generator_output = self.generator_model.logits_op
+		# print self.generator_output.get_shape().as_list()
 
 		# Sample the output of the GAN to find the correct prediction of each character
 		generator_samples = []
@@ -722,7 +725,7 @@ class GenAdversarialNet(object):
 		self.current_policy = tf.stack(generator_samples, axis=1)
 
 		# Create the Discriminator embeddings and sample the Generator output and Real input from these embeddings
-		real_inputs = tf.slice(self.input_placeholder, [self.config.batch_size/2,0], [self.config.batch_size/2,self.input_size ])
+		real_inputs = tf.slice(self.input_placeholder, [disc_batch_size,0], [disc_batch_size,self.input_size ])
 		self.embeddings_disc = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
 										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
 		embeddings_generator_out = tf.nn.embedding_lookup(self.embeddings_disc, self.current_policy)
@@ -731,14 +734,14 @@ class GenAdversarialNet(object):
 		# Inputs the fake examples from the CharRNN to the CNN Discriminator
 		embeddings_generator_out = tf.expand_dims(embeddings_generator_out[:,:,0,:], -1)
 		self.discriminator_gen_model = Discriminator(embeddings_generator_out, self.config.num_classes, is_training=self.is_training,
-				 batch_size=self.config.batch_size/2, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 batch_size=gen_batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=False)
 		discriminator_gen_pred = self.discriminator_gen_model.create_model()
 
 		# Inputs the real sequences from the text files to the CNN Discriminator
 		embeddings_real_input = tf.expand_dims(embeddings_real_input, -1)
 		self.discriminator_real_samp = Discriminator(embeddings_real_input,  self.config.num_classes, is_training=self.is_training,
-				 batch_size=self.config.batch_size/2, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 batch_size=disc_batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=True)
 		discriminator_real_pred = self.discriminator_real_samp.create_model()
 
@@ -762,7 +765,7 @@ class GenAdversarialNet(object):
 	def train(self):
 		class_loss_weight = 1
 
-		self.gan_logits = tf.concat([self.gan_fake_output, self.gan_real_output],axis=0)
+		self.gan_logits = tf.concat([self.gan_real_output, self.gan_fake_output],axis=0)
 
 		loss_class = tf.reduce_mean(class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.gan_logits,
 					labels=self.label_placeholder))
