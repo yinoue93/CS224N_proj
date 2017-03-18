@@ -29,10 +29,10 @@ class Config(object):
 
 		self.songtype = 19#20
 		self.sign = 16
-		self.notesize = 5
+		self.notesize =5
 		self.flats = 12
 		self.mode = 6
-
+		
 		self.len = 1
 		self.complex = 1
 		self.max_length = 8
@@ -54,7 +54,7 @@ class Config(object):
 		self.num_encode = 8
 		self.num_decode = 4
 		self.attention_option = 'luong'
-		self.bidirectional = True
+		self.bidirectional = False
 
 		# Discriminator Parameters
 		self.numFilters = 32
@@ -210,6 +210,7 @@ class CharRNN(object):
 		# Putting all the word embeddings together and then appending the numerical constants at the end of the word embeddings
 		embeddings_meta = tf.concat([embeddings_meta_flat, tf.to_float(self.meta_placeholder[:, 5:])], axis=-1)
 
+		print embeddings_meta.get_shape().as_list()
 		if self.cell_type == 'lstm':
 			initial_added = tf.cond(self.use_meta_placeholder,
 									lambda: [embeddings_meta for layer in xrange(self.config.num_layers)],
@@ -340,11 +341,11 @@ class Seq2SeqRNN(object):
 
 		if cell_type == 'rnn':
 			self.encoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
-			self.decoder_cell = rnn.BasicRNNCell(self.config.hidden_size)
+			self.decoder_cell = rnn.BasicRNNCell(2*self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'gru':
 			self.encoder_cell = rnn.GRUCell(self.config.hidden_size)
-			self.decoder_cell = rnn.GRUCell(self.config.hidden_size)
+			self.decoder_cell = rnn.GRUCell(2*self.config.hidden_size)
 			self.initial_state_placeholder = tf.placeholder(tf.float32, shape=[None, self.config.hidden_size], name="Initial_State")
 		elif cell_type == 'lstm':
 			self.encoder_cell = rnn.BasicLSTMCell(self.config.hidden_size)
@@ -670,7 +671,7 @@ class GenAdversarialNet(object):
 		self.use_batchnorm = use_batchnorm
 		self.dropout = dropout
 		self.config = Config(hyperparam_path)
-		self.config.batch_size = batch_size
+		self.batch_size = batch_size
 		self.config.vocab_size = vocab_size
 		self.config.num_classes = num_classes
 
@@ -695,8 +696,8 @@ class GenAdversarialNet(object):
 
 	# Ideas for function taken from Goodfellow's Codebase on Training of GANs: https://github.com/openai/improved-gan/
 	def normalize_class_outputs(self,logits):
-		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.config.batch_size/2, 1]))
-		positive_class_logits = tf.slice(logits, [0, 0], [self.config.batch_size/2, self.config.num_classes - 1])
+		generated_class_logits = tf.squeeze(tf.slice(logits, [0, self.config.num_classes - 1], [self.batch_size/2, 1]))
+		positive_class_logits = tf.slice(logits, [0, 0], [self.batch_size/2, self.config.num_classes - 1])
 		mx = tf.reduce_max(positive_class_logits, 1, keep_dims=True)
 		safe_pos_class_logits = positive_class_logits - mx
 
@@ -705,13 +706,18 @@ class GenAdversarialNet(object):
 
 
 	def create_model(self):
-		generator_inputs = tf.slice(self.input_placeholder, [0,0], [self.config.batch_size/2,self.input_size ])
+		gen_batch_size = self.batch_size/2
+		disc_batch_size = self.batch_size/2
 
-		self.generator_model = CharRNN(self.input_size, self.label_size, self.config.batch_size/2 ,self.config.vocab_size,
+		generator_inputs = tf.slice(self.input_placeholder, [0,0], [gen_batch_size,self.input_size ])
+
+		# print generator_inputs.get_shape().as_list()
+		self.generator_model = CharRNN(self.input_size, self.label_size, gen_batch_size ,self.config.vocab_size,
 								self.cell_type, self.hyperparam_path, gan_inputs = generator_inputs)
 		self.generator_model.create_model(is_train = True)
 		self.generator_model.train()
 		self.generator_output = self.generator_model.logits_op
+		# print self.generator_output.get_shape().as_list()
 
 		# Sample the output of the GAN to find the correct prediction of each character
 		generator_samples = []
@@ -721,7 +727,7 @@ class GenAdversarialNet(object):
 		self.current_policy = tf.stack(generator_samples, axis=1)
 
 		# Create the Discriminator embeddings and sample the Generator output and Real input from these embeddings
-		real_inputs = tf.slice(self.input_placeholder, [self.config.batch_size/2,0], [self.config.batch_size/2,self.input_size ])
+		real_inputs = tf.slice(self.input_placeholder, [disc_batch_size,0], [disc_batch_size,self.input_size ])
 		self.embeddings_disc = tf.Variable(tf.random_uniform([self.config.vocab_size, self.config.embedding_dims],
 										 0, 10, dtype=tf.float32, seed=3), name='char_embeddings')
 		embeddings_generator_out = tf.nn.embedding_lookup(self.embeddings_disc, self.current_policy)
@@ -730,14 +736,14 @@ class GenAdversarialNet(object):
 		# Inputs the fake examples from the CharRNN to the CNN Discriminator
 		embeddings_generator_out = tf.expand_dims(embeddings_generator_out[:,:,0,:], -1)
 		self.discriminator_gen_model = Discriminator(embeddings_generator_out, self.config.num_classes, is_training=self.is_training,
-				 batch_size=self.config.batch_size/2, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 batch_size=gen_batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=False)
 		discriminator_gen_pred = self.discriminator_gen_model.create_model()
 
 		# Inputs the real sequences from the text files to the CNN Discriminator
 		embeddings_real_input = tf.expand_dims(embeddings_real_input, -1)
 		self.discriminator_real_samp = Discriminator(embeddings_real_input,  self.config.num_classes, is_training=self.is_training,
-				 batch_size=self.config.batch_size/2, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
+				 batch_size=disc_batch_size, hyperparam_path=self.hyperparam_path, use_lrelu=self.use_lrelu, use_batchnorm=self.use_batchnorm,
 				 dropout=self.dropout, reuse=True)
 		discriminator_real_pred = self.discriminator_real_samp.create_model()
 
@@ -761,7 +767,7 @@ class GenAdversarialNet(object):
 	def train(self):
 		class_loss_weight = 1
 
-		self.gan_logits = tf.concat([self.gan_fake_output, self.gan_real_output],axis=0)
+		self.gan_logits = tf.concat([self.gan_real_output, self.gan_fake_output],axis=0)
 
 		loss_class = tf.reduce_mean(class_loss_weight*tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.gan_logits,
 					labels=self.label_placeholder))

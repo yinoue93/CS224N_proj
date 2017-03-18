@@ -425,30 +425,74 @@ def shuffleDataset(originalDir):
 									:int((i+1)*len(input_list)/len(filenames))]
 			pickle.dump(input_frac, f)
 
-if __name__ == "__main__":
-	# preprocessing pipeline
-	#-----------------------------------
-	originalDataDir = '/data/the_session'
-	# processedDir = originalDataDir
-	processedDir = originalDataDir+'_processed_global_vocab'
+def removeWrongDim(folderName):
+	for subfolder in os.listdir(folderName):
+		subfolderPath = os.path.join(folderName, subfolder)
+		print subfolderPath
 
-	print '-'*20 + 'FORMATTING' + '-'*20
-	formatABCtxt(originalDataDir, processedDir)
-	print '-'*20 + 'CHECKING' + '-'*20
-	checkABCtxt(processedDir)
-	print '-'*20 + 'SPLITTING' + '-'*20
-	datasetSplit(processedDir, (0.8,0.1,0.1))
-	# print '-'*20 + 'GENERATING VOCAB' + '-'*20
-	# generateVocab(processedDir)
-	print '-'*20 + 'ENCODING' + '-'*20
-	encodeABC(processedDir)
-	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-	# npy2nnInput(processedDir, 50, 100, 'seq2seq', output_sz=100)
-	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-	npy2nnInput(processedDir, 50, 100, 'char_rnn')
-	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-	npy2nnInput(processedDir, 25, 25, 'char_rnn')
-	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-	npy2nnInput(processedDir, 4, 20, 'char_rnn')
-	#-----------------------------------
-	pass
+		if 'nn_input' in subfolderPath:
+			inputSz = int(re.findall('[0-9]+', re.findall('window_[0-9]+', subfolderPath)[0])[0])
+
+			if 'output_sz_' in subfolderPath:
+				outputSz = int(re.findall('[0-9]+', re.findall('output_sz_[0-9]+', subfolderPath)[0])[0])
+			else:
+				outputSz = inputSz
+
+			for filename in os.listdir(subfolderPath):
+				with open(os.path.join(subfolderPath, filename), 'rb') as inF:
+					print filename
+
+					filename_abs = os.path.join(subfolderPath, filename)
+					inputTupList = pickle.load(inF)
+
+					deleteIndx = []
+					count = 0
+					for meta,inArr,outArr in inputTupList:
+						if (len(inArr) != inputSz) or (len(outArr) != outputSz):
+							deleteIndx.append(count)
+						count += 1
+
+					if len(deleteIndx)==0:
+						continue
+
+					print 'Found %d tuple[s] with malformed inputs...' % len(deleteIndx)
+					deleteIndx.reverse()
+					for delI in deleteIndx:
+						del inputTupList[delI]
+
+					cleanFilename = os.path.join(subfolderPath, filename.replace('.','_cleaned.'))
+					with open(cleanFilename, 'wb') as outF:
+						pickle.dump(inputTupList, outF)
+
+				os.remove(filename_abs)
+				os.rename(cleanFilename, filename_abs)
+
+
+if __name__ == "__main__":
+	removeWrongDim('/data/full_dataset/gan_dataset/')
+# 	# preprocessing pipeline
+# 	#-----------------------------------
+# 	originalDataDir = '/data/the_session'
+# 	# processedDir = originalDataDir
+# 	processedDir = originalDataDir+'_processed_global_vocab'
+
+# 	print '-'*20 + 'FORMATTING' + '-'*20
+# 	formatABCtxt(originalDataDir, processedDir)
+# 	print '-'*20 + 'CHECKING' + '-'*20
+# 	checkABCtxt(processedDir)
+# 	print '-'*20 + 'SPLITTING' + '-'*20
+# 	datasetSplit(processedDir, (0.8,0.1,0.1))
+# 	# print '-'*20 + 'GENERATING VOCAB' + '-'*20
+# 	# generateVocab(processedDir)
+# 	print '-'*20 + 'ENCODING' + '-'*20
+# 	encodeABC(processedDir)
+# 	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+# 	# npy2nnInput(processedDir, 50, 100, 'seq2seq', output_sz=100)
+# 	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+# 	npy2nnInput(processedDir, 50, 100, 'char_rnn')
+# 	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+# 	npy2nnInput(processedDir, 25, 25, 'char_rnn')
+# 	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+# 	npy2nnInput(processedDir, 4, 20, 'char_rnn')
+# 	#-----------------------------------
+# 	pass

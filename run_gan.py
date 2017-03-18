@@ -230,7 +230,7 @@ def run_gan(args):
                         new_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, meta_batch)
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
-                        gan_labels = [m[0] for m in meta_batch]
+                        gan_labels = np.asarray([int(m[0]) for m in meta_batch])
 
                         feed_dict = {
                             input_placeholder: input_window_batch,
