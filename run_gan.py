@@ -39,7 +39,7 @@ META_DATA = DIR_MODIFIER + '/full_dataset/global_map_meta.p'
 
 SUMMARY_DIR = DIR_MODIFIER + '/cbow_summary'
 
-BATCH_SIZE = 100 # should be dynamically passed into Config
+BATCH_SIZE = 10#0 # should be dynamically passed into Config
 NUM_EPOCHS = 50
 GPU_CONFIG = tf.ConfigProto()
 GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
@@ -224,18 +224,24 @@ def run_gan(args):
                     # Get train data - into feed_dict
                     data = reader.read_abc_pickle(data_file)
                     random.shuffle(data)
-                    data_batches = reader.abc_batch(data, n=batch_size)
+                    data_batches = reader.abc_batch(data, n=batch_size/2)
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
                         new_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, meta_batch)
 
-                        initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
-                        gan_labels = [m[0] for m in meta_batch]
+                        noise_meta_batch = [utils_runtime.create_noise_meta(meta_vocabulary) for l in xrange(batch_size/2)]
+                        new_noise_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, noise_meta_batch)
+
+                        noise_input_window_batch = [np.random.randint(vocabulary_size, size=window_sz) for l in xrange(batch_size/2)]
+                        noise_input_window_batch += input_window_batch
+
+                        initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size/2)] for layer in xrange(curModel.config.num_layers)]
+                        gan_labels = np.asarray([int(m[0]) for m in meta_batch])
 
                         feed_dict = {
-                            input_placeholder: input_window_batch,
+                            input_placeholder: noise_input_window_batch,
                             label_placeholder: gan_labels,
-                            rnn_meta_placeholder: new_meta_batch,
+                            rnn_meta_placeholder: new_noise_meta_batch,
                             rnn_initial_state_placeholder: initial_state_batch,
                             rnn_use_meta_placeholder: True
                         }
