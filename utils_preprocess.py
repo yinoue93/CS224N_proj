@@ -9,7 +9,7 @@ import numpy as np
 from collections import Counter
 from multiprocessing import Pool
 
-# from utils import *
+from utils import *
 
 FORMAT_DIR = 'formatted'
 CHECK_DIR = 'checked'
@@ -77,6 +77,8 @@ def formatABCtxtWorker(dataPack):
 					headerStr = re.match('[a-zA-Z]:',line)
 					if (headerStr is not None) or (line[:3]=='[V:' and not duet):
 						break
+					if len(re.findall('\[V:[03-9]', line))!=0:
+						continue
 
 					# remove stuff inside of double quotes
 					quotes = False
@@ -92,7 +94,7 @@ def formatABCtxtWorker(dataPack):
 					outfile.write(addStr)
 
 					if duet:
-						outfile.write('\n')
+						outfile.write('%')
 
 			outfile.write('\n')
 
@@ -108,7 +110,7 @@ def formatABCtxt(folderName, outputFolder, isDuet):
 	p.map(formatABCtxtWorker, mapList)
 
 MIN_MEASURES = 10
-NUM_TRANSPOSITIONS = 3
+NUM_TRANSPOSITIONS = 4
 def checkABCtxtWorker(dataPack):
 	filename,outputname,isDuet = dataPack
 
@@ -123,7 +125,7 @@ def checkABCtxtWorker(dataPack):
 		# checking stage
 		#-----------------------------
 		# each .abc file needs to be 8 lines long (6 metadata, 1 music, and 1 empty line)
-		if (not isDuet) and len(fileList)!=8:
+		if len(fileList)!=8:
 			print filename+': Does not have 8 lines'
 			return
 
@@ -139,6 +141,9 @@ def checkABCtxtWorker(dataPack):
 			return
 		#-----------------------------
 
+		if isDuet:
+			fileStr = fileStr.replace('%', '\n')
+
 		# augmentation stage
 		#-----------------------------
 		fileStr = 'X:1\n' + fileStr
@@ -153,9 +158,9 @@ def checkABCtxtWorker(dataPack):
 			os.remove(outputname)
 			return
 
-		shift_cands = np.linspace(-5,6,12)
-		np.delete(shift_cands,5)
-		for shift in np.random.choice(shift_cands, NUM_TRANSPOSITIONS):
+		shift_cands = np.linspace(-5, 6, 12)
+		shift_cands = np.delete(shift_cands, 5)
+		for shift in np.random.choice(shift_cands, NUM_TRANSPOSITIONS, replace=False):
 			transposeABC(outputname, outputname.replace('.abc','_%d.abc'%shift), shift)
 
 def checkABCtxt(outputFolder, isDuet):
@@ -167,21 +172,22 @@ def checkABCtxt(outputFolder, isDuet):
 	outputFolder = os.path.join(outputFolder, CHECK_DIR)
 	makedir(outputFolder)
 
-	p = Pool(8)
+	# p = Pool(8)
 	mapList = [(os.path.join(folderName,fname), os.path.join(outputFolder,fname), isDuet)
 										for fname in os.listdir(folderName)]
 
-	p.map(checkABCtxtWorker, mapList)
+	map(checkABCtxtWorker, mapList)
 
 def convertNewLines2Percent(folderName):
+	folderName = os.path.join(folderName, CHECK_DIR)
 	for fname in os.listdir(folderName):
 		pathname = os.path.join(folderName, fname)
-		pathname = 'tmp.abc'
 
 		with open(pathname, 'r+') as f:
 			fileArr = f.read().split('\n')
 			fileStr = '\n'.join(fileArr[0:6])+ '\n' + '%'.join(fileArr[7:])
 			f.seek(0)
+			f.truncate()
 			f.write(fileStr)
 
 def generateVocab(foldername):
@@ -279,8 +285,11 @@ def encodeABCWorker(dataPack):
 def encodeABC(outputFolder):
 	folderName = os.path.join(outputFolder, CHECK_DIR)
 
-	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
-	music_map = pickle.load(open('/data/global_map_music.p','rb'))
+	# meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
+	# music_map = pickle.load(open('/data/global_map_music.p','rb'))
+
+	meta_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_meta.p'),'rb'))
+	music_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_music.p'),'rb'))
 
 	outputFolder_test = os.path.join(outputFolder, ENCODE_TEST_DIR)
 	makedir(outputFolder_test)
@@ -482,35 +491,38 @@ def removeWrongDim(folderName):
 
 
 if __name__ == "__main__":
-	pass
 # 	# preprocessing pipeline
 # 	#-----------------------------------
-# 	originalDataDir = '/data/the_session'
-# 	# processedDir = originalDataDir
-# 	processedDir = originalDataDir+'_processed_global_vocab'
-#	isDuet = True
+	originalDataDir = '/data/full_dataset/duet'
+	# processedDir = originalDataDir
+	processedDir = originalDataDir+'_processed'
+	isDuet = True
 
 # 	print '-'*20 + 'FORMATTING' + '-'*20
 # 	formatABCtxt(originalDataDir, processedDir, isDuet)
 # 	print '-'*20 + 'CHECKING' + '-'*20
 # 	checkABCtxt(processedDir, isDuet)
 
-#	for Duet:
-#	convertNewLines2Percent(processedDir)
+# #	for Duet:
+# 	convertNewLines2Percent(processedDir)
 
-# 	print '-'*20 + 'SPLITTING' + '-'*20
-# 	datasetSplit(processedDir, (0.8,0.1,0.1))
-# 	# print '-'*20 + 'GENERATING VOCAB' + '-'*20
-# 	# generateVocab(processedDir)
-# 	print '-'*20 + 'ENCODING' + '-'*20
-# 	encodeABC(processedDir)
-# 	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-# 	# npy2nnInput(processedDir, 50, 100, 'seq2seq', output_sz=100)
-# 	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-# 	npy2nnInput(processedDir, 50, 100, 'char_rnn')
-# 	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-# 	npy2nnInput(processedDir, 25, 25, 'char_rnn')
-# 	print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-# 	npy2nnInput(processedDir, 4, 20, 'char_rnn')
+	# print '-'*20 + 'SPLITTING' + '-'*20
+	# datasetSplit(processedDir, (0.8,0.1,0.1))
+	# print '-'*20 + 'GENERATING VOCAB' + '-'*20
+	# generateVocab(processedDir)
+	# print '-'*20 + 'ENCODING' + '-'*20
+	# encodeABC(processedDir)
+	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	# npy2nnInput(processedDir, 25, 10, 'seq2seq', output_sz=10)
+	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	# npy2nnInput(processedDir, 25, 25, 'seq2seq', output_sz=25)
+	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	# npy2nnInput(processedDir, 25, 50, 'seq2seq', output_sz=50)
+	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	# npy2nnInput(processedDir, 25, 10, 'char_rnn')
+	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	# npy2nnInput(processedDir, 25, 25, 'char_rnn')
+	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
+	# npy2nnInput(processedDir, 25, 50, 'char_rnn')
 # 	#-----------------------------------
 # 	pass
