@@ -39,6 +39,8 @@ GAN_DEVELOPMENT_DATA = DIR_MODIFIER + '/full_dataset/gan_dataset/nn_input_dev_st
 
 VOCAB_DATA = DIR_MODIFIER + '/full_dataset/global_map_music.p'
 META_DATA = DIR_MODIFIER + '/full_dataset/global_map_meta.p'
+# VOCAB_DATA = DIR_MODIFIER + '/full_dataset/duet_processed/vocab_map_music.p'
+# META_DATA = DIR_MODIFIER + '/full_dataset/duet_processed/vocab_map_meta.p'
 
 SUMMARY_DIR = DIR_MODIFIER + '/dev_summary'
 
@@ -235,7 +237,8 @@ def run_model(args):
         # Checkpoint
         i_stopped, found_ckpt = utils_runtime.get_checkpoint(args, session, saver)
 
-        file_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
+        # file_writer = tf.summary.FileWriter(SUMMARY_DIR, graph=session.graph, max_queue=10, flush_secs=30)
+        file_writer = tf.summary.FileWriter(args.ckpt_dir, graph=session.graph, max_queue=10, flush_secs=30)
         confusion_matrix = np.zeros((vocabulary_size, vocabulary_size))
         batch_accuracies = []
 
@@ -322,7 +325,6 @@ def run_model(args):
 
                 decoded_characters = [vocabulary_decode[char] for char in generated]
 
-                # Currently chopping off the last char regardless if its <end> or not
                 encoding = utils.encoding2ABC(old_meta, generated)
 
         # Train, dev, test model

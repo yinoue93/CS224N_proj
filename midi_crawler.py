@@ -11,7 +11,7 @@ from posixpath import basename
 
 import threading
 
-max_thread = 4
+max_thread = 2
 sema = threading.Semaphore(max_thread)
 lock = threading.Lock()
 
@@ -236,14 +236,15 @@ def abcNotation_urls(url, song_urls, song_names):
 
 def scrapeTheABCNotation(folderName):
 	# first find the urls of all songs
-	base_url = 'http://abcnotation.com/searchTunes?q=%s&f=t&o=a&s=' %folderName
+	base_url = 'http://abcnotation.com/searchTunes?q=%s&f=t&o=a&s=' %'[v:1]'
 
 	song_urls = []
 	song_names = []
 	thread_list = []
-	for i in range(189):
+	for i in xrange(20,25):
+		print i
 		sema.acquire(True)
-		url = base_url+str(10*i)
+		url = base_url+str(50*i)
 		th = threading.Thread(target=abcNotation_urls, 
 							  args=(url, song_urls, song_names))
 

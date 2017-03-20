@@ -1,16 +1,10 @@
-import tensorflow as tf
-
-from tensorflow.contrib.layers.python.layers import layers
 from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import function
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import random_ops
-from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
 
 
