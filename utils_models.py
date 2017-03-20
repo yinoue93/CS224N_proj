@@ -20,6 +20,7 @@ def attention_decoder_fn_sampled_inference(output_fn,
                                            maximum_length,
                                            num_decoder_symbols,
                                            dtype=dtypes.int32,
+                                           should_sample=False,
                                            name=None):
 
     with ops.name_scope(name, "attention_decoder_fn_inference", [
@@ -67,8 +68,11 @@ def attention_decoder_fn_sampled_inference(output_fn,
 
                 # sampled decoder
                 cell_output = output_fn(cell_output)  # logits
-                sampled_cell_output = random_ops.multinomial(cell_output, 1)
-                sampled_cell_output = array_ops.reshape(sampled_cell_output, [-1])
+                if should_sample:
+                    sampled_cell_output = random_ops.multinomial(cell_output, 1)
+                    sampled_cell_output = array_ops.reshape(sampled_cell_output, [-1])
+                else:
+                    sampled_cell_output = math_ops.argmax(cell_output, 1)
                 next_input_id = math_ops.cast(sampled_cell_output, dtype=dtype)
                 done = math_ops.equal(next_input_id, end_of_sequence_id)
                 cell_input = array_ops.gather(embeddings, next_input_id)

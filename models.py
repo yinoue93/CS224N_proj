@@ -47,13 +47,13 @@ class Config(object):
 		self.setIfNotSet('max_length', 8)
 
 		self.setIfNotSet('vocab_size', 81)
-		self.setIfNotSet('meta_embed', 160) #self.songtype/2
+		self.setIfNotSet('meta_embed', 100) #self.songtype/2
 		self.setIfNotSet('hidden_size', self.meta_embed*5 + 2)
-		self.setIfNotSet('embedding_dims', 20)
+		self.setIfNotSet('embedding_dims', self.vocab_size*3/4)
 		self.setIfNotSet('vocab_meta', self.songtype + self.sign + self.notesize + self.flats + self.mode)
 		self.setIfNotSet('num_meta', 7)
 		self.setIfNotSet('num_layers', 2)
-		self.setIfNotSet('keep_prob', 0.8)
+		self.setIfNotSet('keep_prob', 0.6)
 
 		# Only for CBOW model
 		self.setIfNotSet('embed_size', 32)
@@ -632,7 +632,7 @@ class Seq2SeqRNN(object):
 						attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
 						attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
 						start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
-						maximum_length=tf.reduce_max(self.num_encode) + 3, num_decoder_symbols=self.config.vocab_size)
+						maximum_length=tf.reduce_max(self.num_decode) + 3, num_decoder_symbols=self.config.vocab_size, should_sample=True)
 
 			self.decoder_outputs_train, self.decoder_state_train, \
 			self.decoder_context_state_train =  seq2seq.dynamic_rnn_decoder( cell=self.decoder_cell,
