@@ -6,6 +6,7 @@ from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import random_ops
 from tensorflow.python.util import nest
+from tensorflow.python.ops import nn_ops
 
 
 def attention_decoder_fn_sampled_inference(output_fn,
@@ -20,7 +21,7 @@ def attention_decoder_fn_sampled_inference(output_fn,
                                            maximum_length,
                                            num_decoder_symbols,
                                            dtype=dtypes.int32,
-                                           should_sample=False,
+                                           temperature=None,
                                            name=None):
 
     with ops.name_scope(name, "attention_decoder_fn_inference", [
@@ -68,7 +69,9 @@ def attention_decoder_fn_sampled_inference(output_fn,
 
                 # sampled decoder
                 cell_output = output_fn(cell_output)  # logits
-                if should_sample:
+                if temperature:
+                    temperature_cell_output = math_ops.divide(cell_output, temperature)
+                    temperature_cell_output = nn_ops.softmax(temperature_cell_output)
                     sampled_cell_output = random_ops.multinomial(cell_output, 1)
                     sampled_cell_output = array_ops.reshape(sampled_cell_output, [-1])
                 else:

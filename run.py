@@ -258,7 +258,7 @@ def run_model(args):
                 return
 
             # Sample Model
-            warm_length = 20
+            warm_length = 5
             warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
 
             # warm_meta_array = [warm_meta[:] for idx in xrange(5)]

@@ -632,7 +632,7 @@ class Seq2SeqRNN(object):
 						attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
 						attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
 						start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
-						maximum_length=tf.reduce_max(self.num_decode) + 3, num_decoder_symbols=self.config.vocab_size, should_sample=True)
+						maximum_length=tf.reduce_max(self.num_decode) + 3, num_decoder_symbols=self.config.vocab_size, temperature=0.5)
 
 			self.decoder_outputs_train, self.decoder_state_train, \
 			self.decoder_context_state_train =  seq2seq.dynamic_rnn_decoder( cell=self.decoder_cell,
