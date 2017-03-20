@@ -185,10 +185,10 @@ def convertNewLines2Percent(folderName):
 
 		with open(pathname, 'r+') as f:
 			fileArr = f.read().split('\n')
-			fileStr = '\n'.join(fileArr[0:6])+ '\n' + '%'.join(fileArr[7:])
+			fileStr = '\n'.join(fileArr[0:7])+ '\n' + '%'.join(fileArr[7:])
 			f.seek(0)
 			f.truncate()
-			f.write(fileStr)
+			f.write(fileStr + '\n')
 
 def generateVocab(foldername):
 	"""
@@ -210,6 +210,8 @@ def generateVocab(foldername):
 
 		try:
 			meta,music = loadCleanABC(filename)
+			if len(music.replace('%','').strip()) == 0:
+				continue
 		except:
 			print filename
 			continue
@@ -219,7 +221,10 @@ def generateVocab(foldername):
 			exit(0)
 
 		for header in headerTup:
-			newMeta = str(meta[header])
+			try:
+				newMeta = str(meta[header])
+			except:
+				break
 			if newMeta not in metaCount[header]:
 				metaCount[header][newMeta] = 0
 
@@ -285,11 +290,11 @@ def encodeABCWorker(dataPack):
 def encodeABC(outputFolder):
 	folderName = os.path.join(outputFolder, CHECK_DIR)
 
-	# meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
-	# music_map = pickle.load(open('/data/global_map_music.p','rb'))
+	meta_map = pickle.load(open('/data/global_map_meta.p','rb'))
+	music_map = pickle.load(open('/data/global_map_music.p','rb'))
 
-	meta_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_meta.p'),'rb'))
-	music_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_music.p'),'rb'))
+	# meta_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_meta.p'),'rb'))
+	# music_map = pickle.load(open(os.path.join(outputFolder, 'vocab_map_music.p'),'rb'))
 
 	outputFolder_test = os.path.join(outputFolder, ENCODE_TEST_DIR)
 	makedir(outputFolder_test)
@@ -306,7 +311,8 @@ def encodeABC(outputFolder):
 
 	for filename in os.listdir(folderName):
 		fromName = os.path.join(folderName,filename)
-		song_basename = filename[:filename.find('_')]
+		song_basename = find_basename(filename)
+
 		if song_basename in testSongs:
 			outFolder = outputFolder_test
 		elif song_basename in trainSongs:
@@ -506,8 +512,8 @@ if __name__ == "__main__":
 # #	for Duet:
 # 	convertNewLines2Percent(processedDir)
 
-	# print '-'*20 + 'SPLITTING' + '-'*20
-	# datasetSplit(processedDir, (0.8,0.1,0.1))
+# 	print '-'*20 + 'SPLITTING' + '-'*20
+# 	datasetSplit(processedDir, (0.8,0.1,0.1))
 	# print '-'*20 + 'GENERATING VOCAB' + '-'*20
 	# generateVocab(processedDir)
 	# print '-'*20 + 'ENCODING' + '-'*20
@@ -517,12 +523,14 @@ if __name__ == "__main__":
 	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
 	# npy2nnInput(processedDir, 25, 25, 'seq2seq', output_sz=25)
 	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
-	# npy2nnInput(processedDir, 25, 50, 'seq2seq', output_sz=50)
+	# npy2nnInput(processedDir, 10, 100, 'seq2seq', output_sz=100)
 	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
 	# npy2nnInput(processedDir, 25, 10, 'char_rnn')
 	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
 	# npy2nnInput(processedDir, 25, 25, 'char_rnn')
 	# print '-'*20 + 'FORMING NNINPUTS' + '-'*20
 	# npy2nnInput(processedDir, 25, 50, 'char_rnn')
+	# print '-'*20 + 'REMOVING WRONG DIMENSIONS' + '-'*20
+	# removeWrongDim(processedDir)
 # 	#-----------------------------------
 # 	pass

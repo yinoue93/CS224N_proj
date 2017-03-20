@@ -75,6 +75,12 @@ def abc2h5(folderName='the_session_cleaned_checked_encoded', outputFile='encoded
 		encodeDict[filestr] = np.load(os.path.join(folderName,filestr))
 	write2hdf5(outputFile,encodeDict)
 
+def find_basename(filename):
+	firstNum = re.search('[0-9]', filename).group(0)
+	if filename[0]==firstNum:
+		firstNum = re.search('_', filename).group(0)
+	return filename[:(filename.find(firstNum)-1)]
+
 def datasetSplit(folderName, setRatio):
 	"""
 	Split the dataset into training, testing, and dev sets.
@@ -87,7 +93,8 @@ def datasetSplit(folderName, setRatio):
 
 	songlist = set()
 	for filename in os.listdir(os.path.join(folderName, CHECK_DIR)):
-		songlist.add(filename[:filename.find('_')])
+		basename = find_basename(filename)
+		songlist.add(basename)
 
 	songlist = list(songlist)
 	random.shuffle(songlist)
