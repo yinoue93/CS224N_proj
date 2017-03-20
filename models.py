@@ -12,6 +12,7 @@ else:
 
 
 from tensorflow.contrib import seq2seq
+import utils_models
 import numpy as np
 import sys
 import os
@@ -54,7 +55,7 @@ class Config(object):
 		self.num_encode = 8
 		self.num_decode = 4
 		self.attention_option = 'luong'
-		self.bidirectional = False
+		self.bidirectional = True
 
 		# Discriminator Parameters
 		self.numFilters = 32
@@ -454,7 +455,13 @@ class Seq2SeqRNN(object):
 						attention_score_fn=attention_score_fn, attention_construct_fn=attention_construct_fn,
 						name='attention_decoder')
 
-			decoder_fn_inference = seq2seq.attention_decoder_fn_inference( output_fn=output_fn, encoder_state=self.encoder_state,
+			# decoder_fn_inference = seq2seq.attention_decoder_fn_inference( output_fn=output_fn, encoder_state=self.encoder_state,
+			# 			attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
+			# 			attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
+			# 			start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
+			# 			maximum_length=tf.reduce_max(self.num_decode), num_decoder_symbols=self.config.vocab_size)
+
+			decoder_fn_inference = utils_models.attention_decoder_fn_sampled_inference( output_fn=output_fn, encoder_state=self.encoder_state,
 						attention_keys=attention_keys, attention_values=attention_values, attention_score_fn=attention_score_fn,
 						attention_construct_fn=attention_construct_fn, embeddings=self.embedding_matrix,
 						start_of_sequence_id=self.start_encode, end_of_sequence_id=self.end_encode,
@@ -556,11 +563,9 @@ class Seq2SeqRNN(object):
 		feed_dict = self._feed_dict(feed_values)
 
 		logits = tf.transpose(self.decoder_logits_inference, [1, 0, 2])
-		# self.logits_op = tf.nn.softmax(logits)
-		predictions = tf.argmax(tf.nn.softmax(logits), axis=-1)
-		# logits, state = session.run([self.logits_op, self.self.decoder_context_state_inference], feed_dict=feed_dict)
+		probabilities = tf.nn.softmax(logits)
+		predictions = tf.argmax(probabilities, axis=-1)
 		pred = session.run(predictions, feed_dict=feed_dict)
-		# return logits, state
 		return pred
 
 

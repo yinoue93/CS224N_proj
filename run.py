@@ -340,7 +340,7 @@ def run_model(args):
                         new_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, meta_batch)
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
-                        num_encode = [window_sz] * 100
+                        num_encode = [window_sz] * batch_size
                         num_decode = num_encode[:]
 
                         feed_values = utils_runtime.pack_feed_values(args, input_window_batch,
