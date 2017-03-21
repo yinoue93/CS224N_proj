@@ -14,6 +14,7 @@ import utils_runtime
 import utils_hyperparam
 import utils
 import re
+import copy
 
 tf_ver = tf.__version__
 SHERLOCK = (str(tf_ver) == '0.12.1')
@@ -37,12 +38,7 @@ GAN_TRAIN_DATA = DIR_MODIFIER + '/full_dataset/gan_dataset/nn_input_train_stride
 GAN_TEST_DATA = DIR_MODIFIER + '/full_dataset/gan_dataset/nn_input_test_stride_25_window_25_nnType_seq2seq_output_sz_25_shuffled'
 GAN_DEVELOPMENT_DATA = DIR_MODIFIER + '/full_dataset/gan_dataset/nn_input_dev_stride_25_window_25_nnType_seq2seq_output_sz_25_shuffled'
 
-VOCAB_DATA = DIR_MODIFIER + '/full_dataset/global_map_music.p'
-META_DATA = DIR_MODIFIER + '/full_dataset/global_map_meta.p'
-# VOCAB_DATA = DIR_MODIFIER + '/full_dataset/duet_processed/vocab_map_music.p'
-# META_DATA = DIR_MODIFIER + '/full_dataset/duet_processed/vocab_map_meta.p'
-
-SUMMARY_DIR = DIR_MODIFIER + '/dev_summary'
+SUMMARY_DIR = DIR_MODIFIER + '/dev_summary2'
 
 BATCH_SIZE = 100 # should be dynamically passed into Config
 NUM_EPOCHS = 50
@@ -53,11 +49,13 @@ GPU_CONFIG.gpu_options.per_process_gpu_memory_fraction = 0.3
 # For T --> 0, p "concentrates" on arg max. Hard to sample from!
 TEMPERATURE = 1.0
 
+meta_map = pickle.load(open(os.path.join(DIR_MODIFIER, 'full_dataset/global_map_meta.p'),'rb'))
+music_map = pickle.load(open(os.path.join(DIR_MODIFIER, 'full_dataset/global_map_music.p'),'rb'))
 
 def plot_confusion(confusion_matrix, vocabulary, epoch, characters_remove=[], annotate=False):
     # Get vocabulary components
-    vocabulary_keys = vocabulary.keys()
-    vocabulary_values = vocabulary.values()
+    vocabulary_keys = music_map.keys()
+    vocabulary_values = music_map.values()
     # print vocabulary_keys
     vocabulary_values, vocabulary_keys =  tuple([list(tup) for tup in zip(*sorted(zip(vocabulary_values, vocabulary_keys)))])
     # print vocabulary_keys
@@ -116,47 +114,64 @@ def sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, m
 
 
 def sampleCBOW(session, args, curModel, vocabulary_decode):
-        # Sample Model
-        warm_length = curModel.input_size
-        warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
+    # Sample Model
+    warm_length = curModel.input_size
+    warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length, meta_map, music_map)
 
-        warm_meta_array = [warm_meta]
-        # warm_meta_array = [warm_meta[:] for idx in xrange(3)]
-        # warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
-        # warm_meta_array[1][3] = np.random.choice(11)
+    warm_meta_array = [warm_meta]
+    # warm_meta_array = [warm_meta[:] for idx in xrange(3)]
+    # warm_meta_array[1][4] = 1 - warm_meta_array[1][4]
+    # warm_meta_array[1][3] = np.random.choice(11)
 
-        print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
-        for meta in warm_meta_array:
-            print "Current Metadata: {0}".format(meta)
-            generated = warm_chars[:]
-            context_window = warm_chars[:]
+    print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
+    for meta in warm_meta_array:
+        print "Current Metadata: {0}".format(meta)
+        generated = warm_chars[:]
+        context_window = warm_chars[:]
 
-            # Warm Start (get the first prediction)
+        # Warm Start (get the first prediction)
+        feed_values = utils_runtime.pack_feed_values(args, [context_window], [[0]*len(context_window)],
+                                       None, None, None, None, None)
+        logits,_ = curModel.sample(session, feed_values)
+
+        # Sample
+        sampled_character = utils_runtime.sample_with_temperature(logits, TEMPERATURE)
+        #while sampled_character!=END_TOKEN_ID and len(generated) < 200:
+        while len(generated) < 200:
+            # update the context input for the model
+            context_window = context_window[1:] + [sampled_character]
+
             feed_values = utils_runtime.pack_feed_values(args, [context_window], [[0]*len(context_window)],
                                            None, None, None, None, None)
             logits,_ = curModel.sample(session, feed_values)
 
-            # Sample
-            sampled_character = sample_with_temperature(logits, TEMPERATURE)
-            #while sampled_character!=END_TOKEN_ID and len(generated) < 200:
-            while len(generated) < 200:
-                # update the context input for the model
-                context_window = context_window[1:] + [sampled_character]
+            sampled_character = utils_runtime.sample_with_temperature(logits, TEMPERATURE)
+            generated.append(sampled_character)
 
-                feed_values = utils_runtime.pack_feed_values(args, [context_window], [[0]*len(context_window)],
-                                               None, None, None, None, None)
-                logits,_ = curModel.sample(session, feed_values)
+        decoded_characters = [vocabulary_decode[char] for char in generated]
 
-                sampled_character = sample_with_temperature(logits, TEMPERATURE)
-                generated.append(sampled_character)
+        # Currently chopping off the last char regardless if its <end> or not
+        encoding = utils.encoding2ABC(meta, generated[1:-1], meta_map, music_map)
 
-            decoded_characters = [vocabulary_decode[char] for char in generated]
-
-            # Currently chopping off the last char regardless if its <end> or not
-            encoding = utils.encoding2ABC(meta, generated[1:-1])
+    return encoding
 
 
 def run_model(args):
+    # used by song_generator.py
+    if hasattr(args, 'temperature'):
+        global TEMPERATURE
+        TEMPERATURE = args.temperature
+
+    if hasattr(args, 'warm_len'):
+        warm_length = args.warm_len
+    else:
+        warm_length = 15
+
+    if hasattr(args, 'meta_map'):
+        global meta_map,music_map
+        meta_map = pickle.load(open(os.path.join(DIR_MODIFIER, args.meta_map),'rb'))
+        music_map = pickle.load(open(os.path.join(DIR_MODIFIER, args.music_map),'rb'))
+
     use_seq2seq_data = (args.model == 'seq2seq')
     if args.data_dir != '':
         dataset_dir = args.data_dir
@@ -185,21 +200,17 @@ def run_model(args):
     print "Using checkpoint directory: {0}".format(args.ckpt_dir)
 
     # Getting vocabulary mapping:
-    vocabulary = reader.read_abc_pickle(VOCAB_DATA)
-    vocab_sz = len(vocabulary)
-    vocabulary["<start>"] = vocab_sz
-    vocabulary["<end>"] = vocab_sz+1
+    vocab_sz = len(music_map)
+    music_map["<start>"] = vocab_sz
+    music_map["<end>"] = vocab_sz+1
     if use_seq2seq_data:
-        vocabulary["<go>"] = vocab_sz+2
+        music_map["<go>"] = vocab_sz+2
 
-    vocabulary_size = len(vocabulary)
-    vocabulary_decode = dict(zip(vocabulary.values(), vocabulary.keys()))
-    meta_vocabulary = reader.read_abc_pickle(META_DATA)
+    vocabulary_size = len(music_map)
+    vocabulary_decode = dict(zip(music_map.values(), music_map.keys()))
 
-    start_encode = vocabulary["<go>"] if (args.train == "sample" and use_seq2seq_data) else vocabulary["<start>"]
-    end_encode = vocabulary["<end>"]
-    # Getting meta mapping:
-    meta_map = pickle.load(open(META_DATA, 'rb'))
+    start_encode = music_map["<go>"] if (args.train == "sample" and use_seq2seq_data) else music_map["<start>"]
+    end_encode = music_map["<end>"]
 
     cell_type = 'lstm'
     # cell_type = 'gru'
@@ -254,12 +265,15 @@ def run_model(args):
         # Sample Model
         if args.train == "sample":
             if args.model=='cbow':
-                sampleCBOW(session, args, curModel, vocabulary_decode)
-                return
+                encoding = sampleCBOW(session, args, curModel, vocabulary_decode)
+                return encoding
 
             # Sample Model
-            warm_length = 5
-            warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length)
+            if hasattr(args, 'warmupData'):
+                warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length, meta_map, 
+                                                          music_map, dataFolder=args.warmupData)
+            else:
+                warm_meta, warm_chars = utils_runtime.genWarmStartDataset(warm_length, meta_map, music_map)
 
             # warm_meta_array = [warm_meta[:] for idx in xrange(5)]
             warm_meta_array = [warm_meta[:] for idx in xrange(10)]
@@ -275,7 +289,7 @@ def run_model(args):
             # Higher LEngth
             warm_meta_array[5][5] = 30
 
-            new_warm_meta = utils_runtime.encode_meta_batch(meta_vocabulary, warm_meta_array)
+            new_warm_meta = utils_runtime.encode_meta_batch(meta_map, warm_meta_array)
             new_warm_meta_array = zip(warm_meta_array, new_warm_meta)
 
             print "Sampling from single RNN cell using warm start of ({0})".format(warm_length)
@@ -304,7 +318,7 @@ def run_model(args):
 
                     # Sample
                     sampled_character = utils_runtime.sample_with_temperature(logits, TEMPERATURE)
-                    while sampled_character != vocabulary["<end>"] and len(generated) < 100:
+                    while sampled_character != music_map["<end>"] and len(generated) < 100:
                         if cell_type == 'lstm':
                             initial_state_sample = []
                             for lstm_tuple in state:
@@ -322,13 +336,15 @@ def run_model(args):
                         generated.append(sampled_character)
 
                 elif args.model == 'seq2seq':
-                    prediction = sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, vocabulary, meta, batch_size)
+                    prediction = sample_Seq2Seq(args, curModel, cell_type, session, warm_chars, music_map, meta, batch_size)
                     generated.extend(prediction.flatten())
-
 
                 decoded_characters = [vocabulary_decode[char] for char in generated]
 
-                encoding = utils.encoding2ABC(old_meta, generated)
+                encoding = utils.encoding2ABC(old_meta, generated, meta_map, music_map)
+
+                if hasattr(args, 'ran_from_script'):
+                    return encoding
 
         # Train, dev, test model
         else:
@@ -342,7 +358,7 @@ def run_model(args):
                     data_batches = reader.abc_batch(data, n=batch_size)
                     for k, data_batch in enumerate(data_batches):
                         meta_batch, input_window_batch, output_window_batch = tuple([list(tup) for tup in zip(*data_batch)])
-                        new_meta_batch = utils_runtime.encode_meta_batch(meta_vocabulary, meta_batch)
+                        new_meta_batch = utils_runtime.encode_meta_batch(meta_map, meta_batch)
 
                         initial_state_batch = [[np.zeros(curModel.config.hidden_size) for entry in xrange(batch_size)] for layer in xrange(curModel.config.num_layers)]
                         num_encode = [window_sz] * batch_size
@@ -384,8 +400,8 @@ def run_model(args):
                         curFile.close()
 
                 # Plot Confusion Matrix
-                plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_all")
-                plot_confusion(confusion_matrix, vocabulary, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
+                plot_confusion(confusion_matrix, music_map, confusion_suffix+"_all")
+                plot_confusion(confusion_matrix, music_map, confusion_suffix+"_removed", characters_remove=['|', '2', '<end>'])
 
 def main(_):
 

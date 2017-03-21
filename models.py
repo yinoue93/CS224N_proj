@@ -47,9 +47,9 @@ class Config(object):
 		self.setIfNotSet('max_length', 8)
 
 		self.setIfNotSet('vocab_size', 81)
-		self.setIfNotSet('meta_embed', 100) #self.songtype/2
+		self.setIfNotSet('meta_embed', 160) #self.songtype/2
 		self.setIfNotSet('hidden_size', self.meta_embed*5 + 2)
-		self.setIfNotSet('embedding_dims', self.vocab_size*3/4)
+		self.setIfNotSet('embedding_dims', 20)
 		self.setIfNotSet('vocab_meta', self.songtype + self.sign + self.notesize + self.flats + self.mode)
 		self.setIfNotSet('num_meta', 7)
 		self.setIfNotSet('num_layers', 2)
@@ -61,8 +61,8 @@ class Config(object):
 		# Only for Seq2Seq Attention Models
 		self.setIfNotSet('num_encode', 8)
 		self.setIfNotSet('num_decode', 4)
-		self.setIfNotSet('attention_option', 'luong')
-		self.setIfNotSet('bidirectional', True)
+		self.setIfNotSet('attention_option', 'bahdanau')
+		self.setIfNotSet('bidirectional', False)
 
 		# Discriminator Parameters
 		self.setIfNotSet('numFilters', 32)
