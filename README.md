@@ -8,6 +8,10 @@ Music artists have composed pieces that are both creative and precise. For examp
 
 [`Paper`](final_paper.pdf "Paper")
 
+[`Youtube Survey Videos`](https://www.youtube.com/watch?v=g8DTUFajung&list=PLSynD-DZWHaXvow0cawxhi7InYGQAfDzZ)
+
+[`Song Samples`](https://yinoue93.github.io/CS224N.html).
+
 
 ## Files
   * `midi_crawler.py` - crawls the Internet for .mid files. 
