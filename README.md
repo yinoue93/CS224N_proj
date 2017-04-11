@@ -10,7 +10,7 @@ Music artists have composed pieces that are both creative and precise. For examp
 
 [`Youtube Survey Videos`](https://www.youtube.com/watch?v=g8DTUFajung&list=PLSynD-DZWHaXvow0cawxhi7InYGQAfDzZ)
 
-[`Song Samples`](https://yinoue93.github.io/CS224N.html).
+[`Song Samples`](https://yinoue93.github.io/CS224N.html)
 
 
 ## Files
